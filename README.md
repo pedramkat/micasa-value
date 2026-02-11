@@ -166,3 +166,42 @@ Once the server is running, visit `http://localhost:3000` to start using the app
 - [Prisma Client API reference](https://www.prisma.io/docs/orm/prisma-client)
 - [Join our Discord community](https://discord.com/invite/prisma)
 - [Follow us on Twitter](https://twitter.com/prisma)
+
+--- Database URL ---
+
+Connect Prisma ORM to your Prisma Postgres database with this URL:
+
+postgres://be1d1063ac2119a5dda4c13adc613f879dc95be3cea17d51bb4ce4fc1b64df29:sk_eD-cMv-NHFvydhnxeKwIm@db.prisma.io:5432/postgres?sslmode=require
+
+--- Next steps ---
+
+Go to https://pris.ly/ppg-init for detailed instructions.
+
+1. Install the Postgres adapter
+npm install @prisma/adapter-pg
+
+...and add it to your Prisma Client instance:
+
+import { PrismaPg } from "@prisma/adapter-pg";
+import { PrismaClient } from "./generated/prisma/client";
+
+const connectionString = `${process.env.DATABASE_URL}`;
+
+const adapter = new PrismaPg({ connectionString });
+const prisma = new PrismaClient({ adapter });
+
+2. Apply migrations
+Run the following command to create and apply a migration:
+npx prisma migrate dev
+
+3. Manage your data
+View and edit your data locally by running this command:
+npx prisma studio
+...or online in Console:
+https://console.prisma.io/of88r4m2z5z1uwr7cppulsoo/cmlikits203lwwjecxaj5d0i0/cmlikits203lswjectyymfkvs/studio
+
+4. Send queries from your app
+If you already have an existing app with Prisma ORM, you can now run it and it will send queries against your newly created Prisma Postgres instance.
+
+5. Learn more
+For more info, visit the Prisma Postgres docs: https://pris.ly/ppg-docs
