@@ -5,8 +5,8 @@
 // Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
 
 generator client {
-  provider = "prisma-client"
-  output   = "./generated"
+  provider = "prisma-client-js"
+  output   = "../prisma/generated/client"
 }
 
 datasource db {
@@ -14,11 +14,15 @@ datasource db {
 }
 
 model User {
-  id       String  @id @default(cuid())
-  name     String?
-  email    String  @unique
-  password String
-  posts    Post[]
+  id         String    @id @default(cuid())
+  name       String?
+  email      String    @unique
+  password   String
+  telegramId String?   @unique
+  posts      Post[]
+  sessions   Session[]
+  houses     House[]
+  role       Role      @default(AGENT)
 }
 
 model Post {
@@ -30,4 +34,56 @@ model Post {
   published Boolean  @default(false)
   authorId  String?
   author    User?    @relation(fields: [authorId], references: [id])
+}
+
+model House {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  agencyId    String?
+  agentId     String?
+  ownerId     String?
+  userId      String?
+  user        User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  botTexts    Json?    @db.JsonB
+  valuation   Decimal? @db.Decimal(12, 2)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId])
+}
+
+model Session {
+  id         String    @id @default(cuid())
+  userId     String?
+  user       User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  telegramId String
+  startedAt  DateTime  @default(now())
+  endedAt    DateTime?
+  expiresAt  DateTime
+  isActive   Boolean   @default(true)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@index([telegramId])
+  @@index([userId])
+}
+
+model Configuration {
+  id                 String   @id @default(cuid())
+  title              String
+  description        String?
+  fixValue           Decimal? @db.Decimal(12, 2)
+  variableValue      Decimal? @db.Decimal(12, 2)
+  properties         Json?    @db.JsonB
+  propertyValuation  Boolean  @default(false)
+  houseValuation     Boolean  @default(false)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+enum Role {
+  ADMIN
+  MANAGER
+  AGENT
 }

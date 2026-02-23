@@ -1,4 +1,4 @@
-import { PrismaClient } from './generated/client';
+import { PrismaClient, Role } from '@prisma/client';
 import { PrismaPg } from "@prisma/adapter-pg"
 import bcrypt from 'bcryptjs';
 
@@ -7,40 +7,56 @@ const prisma = new PrismaClient({ adapter });
 
 async function main() {
   // Create 5 users with hashed passwords
+  // Create or update 5 users with hashed passwords
   const users = await Promise.all([
-    prisma.user.create({
-      data: {
+    prisma.user.upsert({
+      where: { email: 'alice@example.com' },
+      update: { role: Role.ADMIN },
+      create: {
         email: 'alice@example.com',
         name: 'Alice',
         password: await bcrypt.hash('password123', 10),
+        role: Role.ADMIN,
       },
     }),
-    prisma.user.create({
-      data: {
+    prisma.user.upsert({
+      where: { email: 'bob@example.com' },
+      update: { role: Role.MANAGER },
+      create: {
         email: 'bob@example.com',
         name: 'Bob',
         password: await bcrypt.hash('password123', 10),
+        role: Role.MANAGER,
       },
     }),
-    prisma.user.create({
-      data: {
+    prisma.user.upsert({
+      where: { email: 'charlie@example.com' },
+      update: { role: Role.AGENT },
+      create: {
         email: 'charlie@example.com',
         name: 'Charlie',
         password: await bcrypt.hash('password123', 10),
+        role: Role.AGENT,
       },
     }),
-    prisma.user.create({
-      data: {
+    prisma.user.upsert({
+      where: { email: 'diana@example.com' },
+      update: { role: Role.AGENT },
+      create: {
         email: 'diana@example.com',
         name: 'Diana',
         password: await bcrypt.hash('password123', 10),
+        role: Role.AGENT,
       },
     }),
-    prisma.user.create({
-      data: {
+    prisma.user.upsert({
+      where: { email: 'edward@example.com' },
+      update: { role: Role.AGENT },
+      create: {
         email: 'edward@example.com',
         name: 'Edward',
         password: await bcrypt.hash('password123', 10),
+        role: Role.AGENT,
       },
     }),
   ]);
@@ -52,6 +68,15 @@ async function main() {
     diana: users[3].id,
     edward: users[4].id,
   };
+
+  // Clean up existing posts for these users to avoid duplicates
+  await prisma.post.deleteMany({
+    where: {
+      authorId: {
+        in: users.map(u => u.id)
+      }
+    }
+  });
 
   // Create 15 posts distributed among users
   await prisma.post.createMany({
