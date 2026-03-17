@@ -167,67 +167,73 @@ Once the server is running, visit `http://localhost:3000` to start using the app
 - [Join our Discord community](https://discord.com/invite/prisma)
 - [Follow us on Twitter](https://twitter.com/prisma)
 
---- Database URL ---
+--- Supabase (Cloud) database ---
 
-Connect Prisma ORM to your Prisma Postgres database with this URL:
+This project uses Supabase Postgres (with PostGIS) and Prisma.
 
-postgres://be1d1063ac2119a5dda4c13adc613f879dc95be3cea17d51bb4ce4fc1b64df29:sk_eD-cMv-NHFvydhnxeKwIm@db.prisma.io:5432/postgres?sslmode=require
+### Environment variables
 
---- Next steps ---
+Set these in your `.env` locally and in Vercel project settings:
 
-Go to https://pris.ly/ppg-init for detailed instructions.
+`DIRECT_URL`
+- Direct DB connection used by Prisma migrations (`npx prisma migrate ...`).
+- Use the **Direct connection** string from Supabase.
 
-1. Install the Postgres adapter
-npm install @prisma/adapter-pg
+`DATABASE_URL`
+- Runtime DB connection used by the app.
+- If your platform is IPv4-only (common) or serverless (Vercel), prefer the **Session Pooler** connection string from Supabase.
 
-...and add it to your Prisma Client instance:
+### Enable PostGIS (once)
 
-import { PrismaPg } from "@prisma/adapter-pg";
-import { PrismaClient } from "./generated/prisma/client";
+In Supabase SQL Editor:
 
-const connectionString = `${process.env.DATABASE_URL}`;
+```sql
+create extension if not exists postgis;
+select PostGIS_Full_Version();
+```
 
-const adapter = new PrismaPg({ connectionString });
-const prisma = new PrismaClient({ adapter });
+### Apply migrations
 
-2. Apply migrations
-Run the following command to create and apply a migration:
-npx prisma migrate dev
+```bash
+npx prisma migrate deploy
+```
 
-3. Manage your data
-View and edit your data locally by running this command:
-npx prisma studio
-...or online in Console:
-https://console.prisma.io/of88r4m2z5z1uwr7cppulsoo/cmlikits203lwwjecxaj5d0i0/cmlikits203lswjectyymfkvs/studio
+### Seed the database
 
-4. Send queries from your app
-If you already have an existing app with Prisma ORM, you can now run it and it will send queries against your newly created Prisma Postgres instance.
+```bash
+npx prisma db seed
+```
 
-5. Learn more
-For more info, visit the Prisma Postgres docs: https://pris.ly/ppg-docs
+The seed runs the OMI import scripts (market values, zones, polygons) and is safe to re-run.
 
-### Prisma restart
-ps aux | grep prisma   
-kill -9 <PID>
-pkill -9 node 
-npx prisma studio --port 5555 &
+### View the database with DBeaver
+
+If the direct host (`db.<project-ref>.supabase.co:5432`) does not connect (e.g. `No route to host`), your network is likely IPv4-only and the direct endpoint is IPv6-only.
+
+Use Supabase **Pooler settings** (Session Pooler) in DBeaver:
+
+- Host: `<region>.pooler.supabase.com`
+- Port: as shown in Pooler settings
+- Database: `postgres`
+- User: as shown in Pooler settings
+- SSL mode: `require`
 
 ### NGROK setup
 
 --- NGROK ---
-ngrok http --url=https://audrina-nondedicative-jacquiline.ngrok-free.app http://localhost:3000/
+ngrok http --url=https://audrina-nondedicative-jacquiline.ngrok-free.app http://localhost:3010/
 
 --- TELEGRAM ---
 curl -X POST \
-https://api.telegram.org/bot8355444921:AAFB3MIGEv1qt5E64fA3LXblzWsqYcSrFCA/setWebhook \
+https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook \
 -d "url=https://audrina-nondedicative-jacquiline.ngrok-free.app/api/telegram/webhook"
 
-curl -X POST https://api.telegram.org/bot8355444921:AAFB3MIGEv1qt5E64fA3LXblzWsqYcSrFCA/deleteWebhook
+curl -X POST https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/deleteWebhook
 
-curl -X POST https://api.telegram.org/bot8355444921:AAFB3MIGEv1qt5E64fA3LXblzWsqYcSrFCA/getWebhookInfo
+curl -X POST https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/getWebhookInfo
 
 // Add Menu Button to chat
-curl -X POST https://api.telegram.org/bot8355444921:AAFB3MIGEv1qt5E64fA3LXblzWsqYcSrFCA/setChatMenuButton \
+curl -X POST https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setChatMenuButton \
 -H "Content-Type: application/json" \
 -d '{
   "menu_button": {
@@ -235,7 +241,7 @@ curl -X POST https://api.telegram.org/bot8355444921:AAFB3MIGEv1qt5E64fA3LXblzWsq
   }
 }'
 
-curl -X POST https://api.telegram.org/bot8355444921:AAFB3MIGEv1qt5E64fA3LXblzWsqYcSrFCA/setMyCommands \
+curl -X POST https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setMyCommands \
 -H "Content-Type: application/json" \
 -d '{
   "commands": [

@@ -7,10 +7,12 @@
 generator client {
   provider = "prisma-client-js"
   output   = "../prisma/generated/client"
+  previewFeatures = ["postgresqlExtensions"]
 }
 
 datasource db {
   provider = "postgresql"
+  extensions = [postgis]
 }
 
 model User {
@@ -45,6 +47,7 @@ model House {
   ownerId     String?
   userId      String?
   user        User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  coordinate  Json?    @db.JsonB
   botTexts    Json?    @db.JsonB
   valuation   Decimal? @db.Decimal(12, 2)
   createdAt   DateTime @default(now())
@@ -80,6 +83,88 @@ model Configuration {
   houseValuation     Boolean  @default(false)
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
+}
+
+// OMI - Osservatorio del Mercato Immobiliare (Real Estate Market Observatory)
+model OmiMarketValue {
+  id                String   @id @default(cuid())
+  areaTerritorial   String   // Area_territoriale
+  regione           String   // Regione
+  provincia         String   // Prov
+  comuneIstat       String   // Comune_ISTAT
+  comuneCat         String?  // Comune_cat
+  sezione           String?  // Sez
+  comuneAmm         String?  // Comune_amm
+  comuneDescrizione String   // Comune_descrizione
+  fascia            String   // Fascia (A, B, C, D, E)
+  zona              String   // Zona (B1, C1, etc.)
+  linkZona          String   // LinkZona (e.g., AL00000001)
+  codTipologia      String   // Cod_Tip (1, 5, 6, 9, 13, 14, 15, 20)
+  descrTipologia    String   // Descr_Tipologia (Abitazioni civili, Negozi, etc.)
+  stato             String   // Stato (NORMALE, etc.)
+  statoPrev         String?  // Stato_prev
+  comprMin          Decimal? @db.Decimal(12, 2) // Compr_min (min purchase price)
+  comprMax          Decimal? @db.Decimal(12, 2) // Compr_max (max purchase price)
+  supNlCompr        String?  // Sup_NL_compr (surface unit for purchase)
+  locMin            Decimal? @db.Decimal(12, 2) // Loc_min (min rental price)
+  locMax            Decimal? @db.Decimal(12, 2) // Loc_max (max rental price)
+  supNlLoc          String?  // Sup_NL_loc (surface unit for rental)
+  semester          String   // Semestre (e.g., "2025/1")
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@unique([linkZona, codTipologia, semester])
+  @@index([comuneIstat])
+  @@index([linkZona])
+  @@index([zona])
+  @@index([codTipologia])
+  @@index([comuneDescrizione, zona, codTipologia])
+}
+
+model OmiZone {
+  id                String   @id @default(cuid())
+  areaTerritorial   String   // Area_territoriale
+  regione           String   // Regione
+  provincia         String   // Prov
+  comuneIstat       String   // Comune_ISTAT
+  comuneCat         String?  // Comune_cat
+  sezione           String?  // Sez
+  comuneAmm         String?  // Comune_amm
+  comuneDescrizione String   // Comune_descrizione
+  fascia            String   // Fascia (A, B, C, D, E)
+  zonaDescr         String   // Zona_Descr (zone description)
+  zona              String   // Zona (B1, C1, etc.)
+  linkZona          String   // LinkZona (e.g., AL00000001)
+  codTipPrev        String?  // Cod_tip_prev
+  descrTipPrev      String?  // Descr_tip_prev
+  statoPrev         String?  // Stato_prev
+  microzona         String?  // Microzona
+  semester          String   // Semestre (e.g., "2025/1")
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@unique([linkZona, semester])
+  @@index([comuneIstat])
+  @@index([linkZona])
+  @@index([zona])
+  @@index([comuneDescrizione, zona])
+}
+
+model OmiPolygon {
+  id                String   @id @default(cuid())
+  comuneAmm         String   // Comune_amm (e.g., A182 for ALESSANDRIA)
+  linkZona          String   // LinkZona (e.g., AL00000001)
+  zona              String?  // Zona (B1, C1, etc.)
+  zonaDescr         String?  // Zone description
+  polygonData       Json     @db.JsonB // GeoJSON polygon data from KML
+  kmlFileName       String   // Original KML filename
+  semester          String   // Semestre (e.g., "2025/1")
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@unique([comuneAmm, linkZona, semester])
+  @@index([comuneAmm])
+  @@index([linkZona])
 }
 
 enum Role {

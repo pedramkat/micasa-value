@@ -13,6 +13,18 @@ const userHouses = new Map<number, string>()
 // Store users waiting for email verification
 const awaitingEmail = new Set<number>()
 
+function extractAddressFromHouseDescription(description?: string | null): string | null {
+    if (!description) return null
+
+    try {
+        const parsed = JSON.parse(description)
+        const addr = parsed?.houseParameters?.Indirizzo
+        return typeof addr === "string" && addr.trim() ? addr.trim() : null
+    } catch {
+        return null
+    }
+}
+
 // Helper function to process house data with OpenAI when session ends
 async function processHouseDataWithOpenAI(houseId: string, telegramUserId: number) {
     try {
@@ -74,7 +86,7 @@ async function processHouseDataWithOpenAI(houseId: string, telegramUserId: numbe
             },
             {
                 role: "assistant" as const,
-                content: `Organizza le informazioni della casa che ricevi in un modo pulito e chiaro. Usa le informazioni che ricevi per riempire questo json fin dove trovi le informazioni utili nel messaggio di testo ricevuto ${houseParametersJson}, e metti la risposta sotto la chiave houseParameters. inoltre ritorna un Title per la casa, usa l'indirizzo completo per il title e altre informazioni unici e particolari per evvidenziare la casa e renderla unica. la risposta deve andare sotto la chiave title.\n Inoltre riempi anche quest altro json ${configurationsJson} della valutazione della casa con le informazioni che trovi nel messaggio di testo ricevuto. e metti la risposta sotto la chiave configurations.\nIMPORTANTE: Ritorna SOLO JSON valido senza commenti. Non includere // o /* */ nel JSON.`
+                content: `Organizza le informazioni della casa che ricevi in un modo pulito e chiaro. Usa le informazioni che ricevi per riempire questo json fin dove trovi le informazioni utili nel messaggio di testo ricevuto ${houseParametersJson}, e metti la risposta sotto la chiave houseParameters. IMPORTANTE: il JSON houseParametersJson sopra contiene per ogni chiave il TIPO atteso (string, int, bool). Devi validare e formattare ogni valore in base a quel tipo: se il tipo è string inserisci una stringa; se è int inserisci un numero intero; se è bool inserisci true/false. Se non sei sicuro o il valore non è valido per quel tipo, metti null per quella chiave. inoltre ritorna un Title per la casa, usa l'indirizzo completo per il title e altre informazioni unici e particolari per evvidenziare la casa e renderla unica. la risposta deve andare sotto la chiave title.\n Inoltre riempi anche quest altro json ${configurationsJson} della valutazione della casa con le informazioni che trovi nel messaggio di testo ricevuto. e metti la risposta sotto la chiave configurations.\nIMPORTANTE: Ritorna SOLO JSON valido senza commenti. Non includere // o /* */ nel JSON.`
             },
             {
                 role: "user" as const,
@@ -129,6 +141,20 @@ async function processHouseDataWithOpenAI(houseId: string, telegramUserId: numbe
                 
                 const updatedHouse = await houseService.update(houseId, updateData)
                 console.log(`[User ${telegramUserId}] House updated successfully. New title: "${updatedHouse.title}"`)
+
+                const addressFromResponse = parsedResponse?.houseParameters?.Indirizzo
+                const address = (typeof addressFromResponse === "string" && addressFromResponse.trim())
+                    ? addressFromResponse.trim()
+                    : extractAddressFromHouseDescription(updatedHouse.description)
+
+                if (address) {
+                    try {
+                        await houseService.setCoordinateFromStreet(houseId, address)
+                        console.log(`[User ${telegramUserId}] House coordinate updated from address: ${address}`)
+                    } catch (geoError) {
+                        console.error(`[User ${telegramUserId}] Geocoding error for house ${houseId}:`, geoError)
+                    }
+                }
             } else {
                 console.log(`[User ${telegramUserId}] No title, houseParameters or configurations in parsed response`)
             }
@@ -238,6 +264,16 @@ bot.hears("➕ Add", async (ctx) => {
             botTexts: [],
         })
         console.log(`[User ${telegramUserId}] Created new house: ${house.id} for session ${session.id}`)
+
+        const address = extractAddressFromHouseDescription(house.description)
+        if (address) {
+            try {
+                await houseService.setCoordinateFromStreet(house.id, address)
+                console.log(`[User ${telegramUserId}] House coordinate set on create from address: ${address}`)
+            } catch (geoError) {
+                console.error(`[User ${telegramUserId}] Geocoding error on create for house ${house.id}:`, geoError)
+            }
+        }
 
         // Store house ID for this Telegram user
         userHouses.set(telegramUserId, house.id)
@@ -372,7 +408,17 @@ bot.on("voice", async (ctx) => {
             }
         } catch (error) {
             console.error(`[User ${userId}] Transcription error:`, error)
-            await ctx.reply("❌ Sorry, I couldn't transcribe that. Please try again.", mainKeyboard)
+            const status = (error as any)?.status
+            const retryAfterMs = (error as any)?.retryAfterMs
+            if (status === 429) {
+                const seconds = typeof retryAfterMs === "number" ? Math.ceil(retryAfterMs / 1000) : null
+                await ctx.reply(
+                    `⚠️ OpenAI rate limit reached. Please try again${seconds ? ` in ${seconds}s` : " in a moment"}.`,
+                    mainKeyboard,
+                )
+            } else {
+                await ctx.reply("❌ Sorry, I couldn't transcribe that. Please try again.", mainKeyboard)
+            }
         }
     } else {
         await ctx.reply("Click '➕ Add' first to start transcribing voice messages.", mainKeyboard)

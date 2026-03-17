@@ -3,11 +3,15 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev -p 3010",
     "build": "npx prisma migrate deploy && next build",
     "start": "next start",
     "lint": "eslint .",
-    "postinstall": "npx prisma generate"
+    "postinstall": "npx prisma generate",
+    "import:omi:market-values": "tsx scripts/import-omi-market-values.ts",
+    "import:omi:zones": "tsx scripts/import-omi-zones.ts",
+    "import:omi:polygons": "tsx scripts/import-omi-polygons.ts",
+    "geodecode": "tsx scripts/geodecode.ts"
   },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.28",
@@ -15,12 +19,15 @@
     "@prisma/client": "7.0.0",
     "ai": "^6.0.84",
     "bcryptjs": "^3.0.2",
+    "csv-parse": "^6.1.0",
+    "dotenv": "^17.3.1",
     "lucide-react": "^0.503.0",
     "next": "16.0.7",
     "next-auth": "^4.24.11",
     "react": "19.2.0",
     "react-dom": "19.2.0",
     "telegraf": "^4.16.3",
+    "xml2js": "^0.6.2",
     "zod": "^4.3.6"
   },
   "devDependencies": {
@@ -29,6 +36,7 @@
     "@types/node": "^20",
     "@types/react": "19.2.5",
     "@types/react-dom": "19.2.3",
+    "@types/xml2js": "^0.4.14",
     "eslint": "^9",
     "eslint-config-next": "16.0.3",
     "postcss": "^8",

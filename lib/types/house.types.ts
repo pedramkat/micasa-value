@@ -1,4 +1,4 @@
-import { House, Prisma } from "@prisma/client"
+import { House, Prisma } from "../../prisma/generated/client"
 
 /**
  * Input type for creating a new house
@@ -11,13 +11,14 @@ export type CreateHouseInput = {
     ownerId?: string
     userId?: string
     valuation?: number
+    coordinate?: Prisma.JsonValue
     botTexts?: Prisma.JsonValue
 }
 
 /**
  * Input type for updating a house
  */
-export type UpdateHouseInput = Partial<CreateHouseInput>
+export type UpdateHouseInput = Prisma.HouseUpdateInput
 
 /**
  * Type for bot text entries stored in JSONB
