@@ -1,6 +1,7 @@
 import { prisma } from "../db"
 import { CreateHouseInput, UpdateHouseInput, BotTextEntry } from "../types/house.types"
 import { House, Prisma } from "../../prisma/generated/client"
+import { randomUUID } from "node:crypto"
 
 /**
  * HouseService - Business logic for House operations
@@ -126,6 +127,55 @@ export class HouseService {
         })
     }
 
+    async deleteValuationSnapshot(houseId: string, valuationId: string): Promise<House> {
+        const house = await prisma.house.findUnique({
+            where: { id: houseId },
+            select: {
+                aiHistory: true,
+                aiCurrent: true,
+                pricingCurrent: true,
+                valuationHistory: true,
+                valuation: true,
+            },
+        })
+
+        if (!house) {
+            throw new Error(`House with id ${houseId} not found`)
+        }
+
+        const valuationHistory = Array.isArray(house.valuationHistory) ? (house.valuationHistory as any[]) : []
+        const toDelete = valuationHistory.find((v) => v && typeof v === "object" && v.id === valuationId)
+        const aiSnapshotId = toDelete && typeof toDelete.aiSnapshotId === "string" ? toDelete.aiSnapshotId : null
+
+        const nextValuationHistory = valuationHistory.filter((v) => !(v && typeof v === "object" && v.id === valuationId))
+
+        const aiHistory = Array.isArray(house.aiHistory) ? (house.aiHistory as any[]) : []
+        const nextAiHistory = aiSnapshotId
+            ? aiHistory.filter((a) => !(a && typeof a === "object" && a.id === aiSnapshotId))
+            : aiHistory
+
+        const latestValuation = nextValuationHistory.length > 0 ? nextValuationHistory[nextValuationHistory.length - 1] : null
+        const latestAi = nextAiHistory.length > 0 ? nextAiHistory[nextAiHistory.length - 1] : null
+
+        const nextPricingCurrent = latestValuation && typeof latestValuation === "object" ? latestValuation.pricingCurrent ?? null : null
+        const nextAiCurrent = latestAi && typeof latestAi === "object" ? latestAi.parsed ?? null : null
+
+        const avgRaw = latestValuation?.result?.avg
+        const avgNumber = typeof avgRaw === "string" || typeof avgRaw === "number" ? Number(avgRaw) : Number.NaN
+        const nextValuationDecimal = Number.isFinite(avgNumber) ? avgNumber.toFixed(2) : null
+
+        return prisma.house.update({
+            where: { id: houseId },
+            data: {
+                aiHistory: nextAiHistory as Prisma.InputJsonValue,
+                valuationHistory: nextValuationHistory as Prisma.InputJsonValue,
+                aiCurrent: nextAiCurrent as any,
+                pricingCurrent: nextPricingCurrent as any,
+                valuation: nextValuationDecimal as any,
+            },
+        })
+    }
+
     /**
      * Find a house by ID
      */
@@ -237,7 +287,7 @@ export class HouseService {
 
         const house = await prisma.house.findUnique({
             where: { id: houseId },
-            select: { coordinate: true, description: true },
+            select: { coordinate: true, pricingCurrent: true },
         })
 
         const point = house?.coordinate as any
@@ -299,23 +349,7 @@ export class HouseService {
                     },
                 })
 
-                let descriptionObj: any = {}
-                const currentDescription = house?.description
-
-                if (typeof currentDescription === "string" && currentDescription.trim()) {
-                    try {
-                        const parsed = JSON.parse(currentDescription)
-                        if (parsed && typeof parsed === "object") {
-                            descriptionObj = parsed
-                        } else {
-                            descriptionObj = { text: currentDescription }
-                        }
-                    } catch {
-                        descriptionObj = { text: currentDescription }
-                    }
-                }
-
-                descriptionObj.geometry = {
+                const geometry = {
                     omiPolygonId: match.id,
                     linkZona: match.linkZona,
                     zona: match.zona,
@@ -323,10 +357,15 @@ export class HouseService {
                     comprMax: marketValue?.comprMax ? marketValue.comprMax.toString() : null,
                 }
 
+                const currentPricing = house?.pricingCurrent && typeof house.pricingCurrent === "object" ? (house.pricingCurrent as any) : {}
+
                 await prisma.house.update({
                     where: { id: houseId },
                     data: {
-                        description: JSON.stringify(descriptionObj, null, 2),
+                        pricingCurrent: {
+                            ...(currentPricing || {}),
+                            geometry,
+                        } as Prisma.InputJsonValue,
                     },
                 })
             } else {
@@ -337,7 +376,7 @@ export class HouseService {
         }
     }
 
-    async calculatePrice(houseId: string): Promise<void> {
+    async calculatePrice(houseId: string, overrideFixValues?: Record<string, unknown>): Promise<void> {
         console.log("start pricing")
         console.log(`houseId: ${houseId}`)
 
@@ -365,29 +404,35 @@ export class HouseService {
 
         const house = await prisma.house.findUnique({
             where: { id: houseId },
-            select: { description: true },
+            select: {
+                aiCurrent: true,
+                aiHistory: true,
+                pricingCurrent: true,
+                valuationHistory: true,
+            },
         })
 
-        const currentDescription = house?.description
-        if (!currentDescription || typeof currentDescription !== "string" || !currentDescription.trim()) {
-            console.log(`No valid description found for houseId: ${houseId}`)
-            return
-        }
+        const aiCurrent = house?.aiCurrent && typeof house.aiCurrent === "object" ? (house.aiCurrent as any) : {}
+        const pricingCurrent = house?.pricingCurrent && typeof house.pricingCurrent === "object" ? (house.pricingCurrent as any) : {}
 
-        let descriptionObj: any
-        try {
-            descriptionObj = JSON.parse(currentDescription)
-        } catch {
-            console.log(`Description is not valid JSON for houseId: ${houseId}`)
-            return
-        }
+        const configurationsFromAi = aiCurrent?.configurations
+        const configurations: string[] = Array.isArray(configurationsFromAi)
+            ? configurationsFromAi.filter((x: unknown) => typeof x === "string" && x.trim())
+            : configurationsFromAi && typeof configurationsFromAi === "object"
+                ? Object.keys(configurationsFromAi as Record<string, unknown>).filter((t) => typeof t === "string" && t.trim())
+                : []
 
-        const configurations: string[] = Array.isArray(descriptionObj?.configurations)
-            ? descriptionObj.configurations.filter((x: unknown) => typeof x === "string" && x.trim())
-            : []
+        const overrideByTitleLower =
+            overrideFixValues && typeof overrideFixValues === "object"
+                ? new Map(
+                      Object.entries(overrideFixValues)
+                          .filter(([k]) => typeof k === "string" && k.trim())
+                          .map(([k, v]) => [k.toLowerCase(), v]),
+                  )
+                : new Map<string, unknown>()
 
-        const comprMinRaw = descriptionObj?.geometry?.comprMin
-        const comprMaxRaw = descriptionObj?.geometry?.comprMax
+        const comprMinRaw = pricingCurrent?.geometry?.comprMin
+        const comprMaxRaw = pricingCurrent?.geometry?.comprMax
 
         const comprMin = typeof comprMinRaw === "string" || typeof comprMinRaw === "number" ? Number(comprMinRaw) : Number.NaN
         const comprMax = typeof comprMaxRaw === "string" || typeof comprMaxRaw === "number" ? Number(comprMaxRaw) : Number.NaN
@@ -397,8 +442,8 @@ export class HouseService {
             return
         }
 
-        const houseParameters = descriptionObj?.houseParameters && typeof descriptionObj.houseParameters === "object"
-            ? descriptionObj.houseParameters
+        const houseParameters = aiCurrent?.houseParameters && typeof aiCurrent.houseParameters === "object"
+            ? aiCurrent.houseParameters
             : {}
 
         const mainSurface = parseArea(houseParameters?.["Superficie"]) 
@@ -441,28 +486,65 @@ export class HouseService {
         const baseMinTotal = comprMin * superficieCommerciale
         const baseMaxTotal = comprMax * superficieCommerciale
 
+        const timestamp = new Date().toISOString()
+        const valuationId = randomUUID()
+        const aiHistory = Array.isArray(house?.aiHistory) ? (house?.aiHistory as any[]) : []
+        const latestAiSnapshotId = typeof aiHistory?.[aiHistory.length - 1]?.id === "string" ? aiHistory[aiHistory.length - 1].id : null
+
+        const basePricing = {
+            superficieCommerciale: superficieCommerciale.toFixed(2),
+            baseEurPerSqm: {
+                comprMin: comprMin.toString(),
+                comprMax: comprMax.toString(),
+            },
+            baseTotal: {
+                comprMin: baseMinTotal.toFixed(2),
+                comprMax: baseMaxTotal.toFixed(2),
+            },
+            components: surfaceComponents,
+        }
+
         if (!configurations.length) {
-            descriptionObj.pricing = {
-                superficieCommerciale: superficieCommerciale.toFixed(2),
-                baseEurPerSqm: {
-                    comprMin: comprMin.toString(),
-                    comprMax: comprMax.toString(),
+            const nextPricingCurrent = {
+                ...pricingCurrent,
+                pricing: {
+                    ...basePricing,
+                    total: {
+                        comprMin: baseMinTotal.toFixed(2),
+                        comprMax: baseMaxTotal.toFixed(2),
+                    },
+                    adjustments: [],
                 },
-                baseTotal: {
-                    comprMin: baseMinTotal.toFixed(2),
-                    comprMax: baseMaxTotal.toFixed(2),
-                },
-                components: surfaceComponents,
-                total: {
-                    comprMin: baseMinTotal.toFixed(2),
-                    comprMax: baseMaxTotal.toFixed(2),
-                },
-                adjustments: [],
             }
+
+            const average = (baseMinTotal + baseMaxTotal) / 2
+            const nextValuationHistory = Array.isArray(house?.valuationHistory) ? ([...(house?.valuationHistory as any[])] as any[]) : []
+            nextValuationHistory.push({
+                id: valuationId,
+                timestamp,
+                source: "unknown",
+                aiSnapshotId: latestAiSnapshotId,
+                inputs: {
+                    geometry: pricingCurrent?.geometry,
+                    houseParameters,
+                    configurations,
+                },
+                configurationFixValues: [],
+                result: {
+                    min: baseMinTotal.toFixed(2),
+                    max: baseMaxTotal.toFixed(2),
+                    avg: average.toFixed(2),
+                },
+                pricingCurrent: nextPricingCurrent,
+            })
 
             await prisma.house.update({
                 where: { id: houseId },
-                data: { description: JSON.stringify(descriptionObj, null, 2) },
+                data: {
+                    pricingCurrent: nextPricingCurrent as Prisma.InputJsonValue,
+                    valuationHistory: nextValuationHistory as Prisma.InputJsonValue,
+                    valuation: average.toFixed(2) as any,
+                },
             })
             return
         }
@@ -476,12 +558,49 @@ export class HouseService {
             select: { title: true, fixValue: true },
         })
 
+        const dbFixValueByTitleLower = new Map(
+            configurationRows.map((r) => [r.title.toLowerCase(), r.fixValue]),
+        )
+
+        // aiCurrent.configurations can be a mapping { title: fixValueString }
+        // If present, prefer those values for the valuation snapshot and computation.
+        const aiFixValueByTitleLower =
+            configurationsFromAi && typeof configurationsFromAi === "object" && !Array.isArray(configurationsFromAi)
+                ? new Map(
+                      Object.entries(configurationsFromAi as Record<string, unknown>)
+                          .filter(([k]) => typeof k === "string" && k.trim())
+                          .map(([k, v]) => [k.toLowerCase(), v]),
+                  )
+                : new Map<string, unknown>()
+
         let adjustedMin = baseMinTotal
         let adjustedMax = baseMaxTotal
         const adjustments: Array<{ title: string; fixValue: string }> = []
+        const configurationFixValues: Array<{ title: string; fixValue: string }> = []
 
-        for (const row of configurationRows) {
-            const fixValueNumber = row.fixValue === null || row.fixValue === undefined ? Number.NaN : Number(row.fixValue)
+        for (const title of configurations) {
+            const titleLower = title.toLowerCase()
+            const overrideRaw = overrideByTitleLower.get(titleLower)
+            const aiRaw = aiFixValueByTitleLower.get(titleLower)
+            const dbRaw = dbFixValueByTitleLower.get(titleLower)
+
+            const rawToNumber = (value: unknown): number => {
+                if (value === null || value === undefined) return Number.NaN
+                if (typeof value === "number") return Number.isFinite(value) ? value : Number.NaN
+                if (typeof value === "string") {
+                    const trimmed = value.trim()
+                    if (!trimmed) return Number.NaN
+                    const n = Number(trimmed)
+                    return Number.isFinite(n) ? n : Number.NaN
+                }
+                return Number.NaN
+            }
+
+            const fixValueNumber = Number.isFinite(rawToNumber(overrideRaw))
+                ? rawToNumber(overrideRaw)
+                : Number.isFinite(rawToNumber(aiRaw))
+                    ? rawToNumber(aiRaw)
+                    : rawToNumber(dbRaw)
             if (!Number.isFinite(fixValueNumber)) {
                 continue
             }
@@ -489,30 +608,50 @@ export class HouseService {
             const factor = fixValueNumber / 100
             adjustedMin *= factor
             adjustedMax *= factor
-            adjustments.push({ title: row.title, fixValue: fixValueNumber.toString() })
+            adjustments.push({ title, fixValue: fixValueNumber.toString() })
+            configurationFixValues.push({ title, fixValue: fixValueNumber.toString() })
         }
 
-        descriptionObj.pricing = {
-            superficieCommerciale: superficieCommerciale.toFixed(2),
-            baseEurPerSqm: {
-                comprMin: comprMin.toString(),
-                comprMax: comprMax.toString(),
+        const nextPricingCurrent = {
+            ...pricingCurrent,
+            pricing: {
+                ...basePricing,
+                total: {
+                    comprMin: adjustedMin.toFixed(2),
+                    comprMax: adjustedMax.toFixed(2),
+                },
+                adjustments,
             },
-            baseTotal: {
-                comprMin: baseMinTotal.toFixed(2),
-                comprMax: baseMaxTotal.toFixed(2),
-            },
-            components: surfaceComponents,
-            total: {
-                comprMin: adjustedMin.toFixed(2),
-                comprMax: adjustedMax.toFixed(2),
-            },
-            adjustments,
         }
+
+        const average = (adjustedMin + adjustedMax) / 2
+        const nextValuationHistory = Array.isArray(house?.valuationHistory) ? ([...(house?.valuationHistory as any[])] as any[]) : []
+        nextValuationHistory.push({
+            id: valuationId,
+            timestamp,
+            source: "unknown",
+            aiSnapshotId: latestAiSnapshotId,
+            inputs: {
+                geometry: pricingCurrent?.geometry,
+                houseParameters,
+                configurations,
+            },
+            configurationFixValues,
+            result: {
+                min: adjustedMin.toFixed(2),
+                max: adjustedMax.toFixed(2),
+                avg: average.toFixed(2),
+            },
+            pricingCurrent: nextPricingCurrent,
+        })
 
         await prisma.house.update({
             where: { id: houseId },
-            data: { description: JSON.stringify(descriptionObj, null, 2) },
+            data: {
+                pricingCurrent: nextPricingCurrent as Prisma.InputJsonValue,
+                valuationHistory: nextValuationHistory as Prisma.InputJsonValue,
+                valuation: average.toFixed(2) as any,
+            },
         })
     }
 

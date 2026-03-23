@@ -225,15 +225,15 @@ ngrok http --url=https://audrina-nondedicative-jacquiline.ngrok-free.app http://
 
 --- TELEGRAM ---
 curl -X POST \
-https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook \
+https://api.telegram.org/bot8355444921:AAFB3MIGEv1qt5E64fA3LXblzWsqYcSrFCA/setWebhook \
 -d "url=https://audrina-nondedicative-jacquiline.ngrok-free.app/api/telegram/webhook"
 
-curl -X POST https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/deleteWebhook
+curl -X POST https://api.telegram.org/bot8355444921:AAFB3MIGEv1qt5E64fA3LXblzWsqYcSrFCA/deleteWebhook
 
-curl -X POST https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/getWebhookInfo
+curl -X POST https://api.telegram.org/bot8355444921:AAFB3MIGEv1qt5E64fA3LXblzWsqYcSrFCA/getWebhookInfo
 
 // Add Menu Button to chat
-curl -X POST https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setChatMenuButton \
+curl -X POST https://api.telegram.org/bot8355444921:AAFB3MIGEv1qt5E64fA3LXblzWsqYcSrFCA/setChatMenuButton \
 -H "Content-Type: application/json" \
 -d '{
   "menu_button": {
@@ -241,12 +241,10 @@ curl -X POST https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setChatMenuButton \
   }
 }'
 
-curl -X POST https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setMyCommands \
+curl -X POST https://api.telegram.org/bot8355444921:AAFB3MIGEv1qt5E64fA3LXblzWsqYcSrFCA/setMyCommands \
 -H "Content-Type: application/json" \
 -d '{
   "commands": [
-    {"command": "start", "description": "Show menu"},
-    {"command": "add", "description": "Add new item"},
-    {"command": "select", "description": "Select item"}
+    {"command": "start", "description": "Start"}
   ]
 }'

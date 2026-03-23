@@ -193,6 +193,7 @@ async function main() {
     { title: "balcone", fixValue: 103, houseValuation: true },
     { title: "ben servito", fixValue: 101, houseValuation: true },
     { title: "classe energetica alta", fixValue: 105, houseValuation: true },
+    { title: "piano terra", fixValue: 105, houseValuation: true },
   ] as const;
 
   for (const cfg of configurationsToSeed) {

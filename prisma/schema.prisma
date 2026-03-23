@@ -50,6 +50,10 @@ model House {
   coordinate  Json?    @db.JsonB
   botTexts    Json?    @db.JsonB
   valuation   Decimal? @db.Decimal(12, 2)
+  aiCurrent   Json?    @db.JsonB
+  pricingCurrent Json? @db.JsonB
+  aiHistory   Json?    @db.JsonB
+  valuationHistory Json? @db.JsonB
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 

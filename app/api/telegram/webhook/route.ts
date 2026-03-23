@@ -2,6 +2,7 @@ import { Telegraf, Markup } from "telegraf"
 import { NextRequest } from "next/server"
 import { openaiService } from "@/lib/openai"
 import { houseService } from "@/lib/services/house.service"
+import { processHouseDataWithOpenAI as processHouseDataWithOpenAIShared } from "@/lib/services/house-ai.service"
 import { createSession, getActiveSession, endSession, isSessionActive, cleanupExpiredSessions } from "@/lib/session"
 import prisma from "@/lib/prisma"
 
@@ -9,6 +10,9 @@ const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN!)
 
 // Store house IDs per user in memory (sessions are in DB)
 const userHouses = new Map<number, string>()
+
+// Store users currently searching for a house to select
+const awaitingHouseSearch = new Set<number>()
 
 // Store users waiting for email verification
 const awaitingEmail = new Set<number>()
@@ -27,149 +31,7 @@ function extractAddressFromHouseDescription(description?: string | null): string
 
 // Helper function to process house data with OpenAI when session ends
 async function processHouseDataWithOpenAI(houseId: string, telegramUserId: number) {
-    try {
-        const house = await houseService.findById(houseId)
-        if (!house || !house.botTexts) {
-            console.log(`[User ${telegramUserId}] No house data found for processing`)
-            return null
-        }
-
-        const botTexts = Array.isArray(house.botTexts) ? house.botTexts : []
-        if (botTexts.length === 0) {
-            console.log(`[User ${telegramUserId}] No messages to process in house ${houseId}`)
-            return null
-        }
-
-        // Format all messages for OpenAI
-        const messagesText = botTexts.map((entry: any) => {
-            const timestamp = new Date(entry.timestamp).toLocaleString()
-            return `[${timestamp}] ${entry.type.toUpperCase()}: ${entry.message}`
-        }).join('\n\n')
-
-        console.log(`[User ${telegramUserId}] Processing ${botTexts.length} messages with OpenAI...`)
-
-        // Fetch configurations with houseValuation = true
-        const houseConfigurations = await prisma.configuration.findMany({
-            where: {
-                houseValuation: true
-            },
-            select: {
-                title: true
-            }
-        })
-
-        const configurationTitles = houseConfigurations.map(config => config.title)
-        const configurationsJson = JSON.stringify(configurationTitles, null, 2)
-        
-        console.log(`[User ${telegramUserId}] Found ${configurationTitles.length} house valuation configurations:`, configurationsJson)
-
-        // Fetch house_parameters configuration
-        const houseParametersConfig = await prisma.configuration.findFirst({
-            where: {
-                title: "house_parameters"
-            },
-            select: {
-                properties: true
-            }
-        })
-
-        const houseParameters = houseParametersConfig?.properties || {}
-        const houseParametersJson = JSON.stringify(houseParameters, null, 2)
-        
-        console.log(`[User ${telegramUserId}] House parameters configuration:`, houseParametersJson)
-
-        // Prepare messages for OpenAI
-        const messages = [
-            {
-                role: "system" as const,
-                content: "Sei un agente immobiliare e stai valutando una casa. Devi organizzare le informazioni in modo da poter utilizzare tutte le informazioni utili per valutare il prezzo in metro quadro della casa."
-            },
-            {
-                role: "assistant" as const,
-                content: `Organizza le informazioni della casa che ricevi in un modo pulito e chiaro. Usa le informazioni che ricevi per riempire questo json fin dove trovi le informazioni utili nel messaggio di testo ricevuto ${houseParametersJson}, e metti la risposta sotto la chiave houseParameters. IMPORTANTE: il JSON houseParametersJson sopra contiene per ogni chiave il TIPO atteso (string, int, bool). Devi validare e formattare ogni valore in base a quel tipo: se il tipo è string inserisci una stringa; se è int inserisci un numero intero; se è bool inserisci true/false. Se non sei sicuro o il valore non è valido per quel tipo, metti null per quella chiave. inoltre ritorna un Title per la casa, usa l'indirizzo completo per il title e altre informazioni unici e particolari per evvidenziare la casa e renderla unica. la risposta deve andare sotto la chiave title.\n Inoltre riempi anche quest altro json ${configurationsJson} della valutazione della casa con le informazioni che trovi nel messaggio di testo ricevuto. e metti la risposta sotto la chiave configurations.\nIMPORTANTE: Ritorna SOLO JSON valido senza commenti. Non includere // o /* */ nel JSON.`
-            },
-            {
-                role: "user" as const,
-                content: `Ecco le informazioni ricevute:\n\n${messagesText}`
-            }
-        ]
-
-        // Send to OpenAI
-        const response = await openaiService.chatWithHistory(messages)
-        console.log(`[User ${telegramUserId}] OpenAI response:`, response)
-
-        // Parse JSON response
-        try {
-            // Try to extract JSON from response (in case there's markdown code blocks)
-            let jsonString = response.trim()
-            const jsonMatch = jsonString.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/)
-            if (jsonMatch) {
-                jsonString = jsonMatch[1]
-            }
-
-            // Remove comments from JSON (OpenAI sometimes adds them)
-            // Remove single-line comments: // comment
-            jsonString = jsonString.replace(/\/\/.*$/gm, '')
-            // Remove multi-line comments: /* comment */
-            jsonString = jsonString.replace(/\/\*[\s\S]*?\*\//g, '')
-
-            const parsedResponse = JSON.parse(jsonString)
-            console.log(`[User ${telegramUserId}] Parsed response:`, JSON.stringify(parsedResponse, null, 2))
-            
-            // Update house with title and description
-            if (parsedResponse.title || parsedResponse.houseParameters || parsedResponse.configurations) {
-                // Build description from houseParameters and configurations
-                const descriptionData: any = {}
-                
-                if (parsedResponse.houseParameters) {
-                    descriptionData.houseParameters = parsedResponse.houseParameters
-                }
-                
-                if (parsedResponse.configurations) {
-                    descriptionData.configurations = parsedResponse.configurations
-                }
-                
-                const descriptionString = Object.keys(descriptionData).length > 0 
-                    ? JSON.stringify(descriptionData, null, 2)
-                    : undefined
-                
-                const updateData = {
-                    title: parsedResponse.title || house.title,
-                    description: descriptionString || house.description || undefined,
-                }
-                console.log(`[User ${telegramUserId}] Updating house ${houseId} with:`, JSON.stringify(updateData, null, 2))
-                
-                const updatedHouse = await houseService.update(houseId, updateData)
-                console.log(`[User ${telegramUserId}] House updated successfully. New title: "${updatedHouse.title}"`)
-
-                const addressFromResponse = parsedResponse?.houseParameters?.Indirizzo
-                const address = (typeof addressFromResponse === "string" && addressFromResponse.trim())
-                    ? addressFromResponse.trim()
-                    : extractAddressFromHouseDescription(updatedHouse.description)
-
-                if (address) {
-                    try {
-                        await houseService.setCoordinateFromStreet(houseId, address)
-                        console.log(`[User ${telegramUserId}] House coordinate updated from address: ${address}`)
-                    } catch (geoError) {
-                        console.error(`[User ${telegramUserId}] Geocoding error for house ${houseId}:`, geoError)
-                    }
-                }
-            } else {
-                console.log(`[User ${telegramUserId}] No title, houseParameters or configurations in parsed response`)
-            }
-
-            return parsedResponse
-        } catch (parseError) {
-            console.error(`[User ${telegramUserId}] Error parsing OpenAI JSON response:`, parseError)
-            console.log(`[User ${telegramUserId}] Raw response:`, response)
-            // Return raw response if parsing fails
-            return { rawResponse: response }
-        }
-    } catch (error) {
-        console.error(`[User ${telegramUserId}] Error processing house data with OpenAI:`, error)
-        return null
-    }
+    return processHouseDataWithOpenAIShared(houseId, telegramUserId.toString())
 }
 
 // Helper to create the persistent keyboard
@@ -296,12 +158,67 @@ bot.hears("📂 Select", async (ctx) => {
         return ctx.reply("❌ Error: Cannot identify user.", mainKeyboard)
     }
 
-    const hasSession = await isSessionActive(telegramId)
-    if (!hasSession) {
-        return ctx.reply("⚠️ No active session. Click '➕ Add' to start a session first.", mainKeyboard)
+    const user = await prisma.user.findUnique({
+        where: { telegramId },
+    })
+
+    if (!userId || !user) {
+        return ctx.reply("⚠️ Please use /start to register your account first.", mainKeyboard)
     }
 
-    await ctx.reply("📂 Select mode activated.", mainKeyboard)
+    const hasSession = await isSessionActive(telegramId)
+    if (!hasSession) {
+        const session = await createSession(telegramId, user.id)
+        console.log(`[User ${userId}] Created session ${session.id} (select mode), expires at ${session.expiresAt}`)
+    }
+
+    awaitingHouseSearch.add(userId)
+    await ctx.reply(
+        "🔎 Send me a search term to find one of your houses (by title).\n\nExample: \"Pisa\" or \"Marco Polo\"",
+        mainKeyboard,
+    )
+})
+
+bot.action(/^select_house:(.+)$/, async (ctx) => {
+    const userId = ctx.from?.id
+    const telegramId = userId?.toString()
+    const houseId = ctx.match?.[1]
+
+    if (!userId || !telegramId || !houseId) {
+        await ctx.answerCbQuery("Invalid selection")
+        return
+    }
+
+    try {
+        const user = await prisma.user.findUnique({
+            where: { telegramId },
+            select: { id: true },
+        })
+
+        if (!user) {
+            await ctx.answerCbQuery("Please /start first")
+            return
+        }
+
+        const house = await prisma.house.findFirst({
+            where: { id: houseId, userId: user.id },
+            select: { id: true, title: true },
+        })
+
+        if (!house) {
+            await ctx.answerCbQuery("House not found")
+            return
+        }
+
+        userHouses.set(userId, house.id)
+        awaitingHouseSearch.delete(userId)
+        await ctx.answerCbQuery("Selected")
+        await ctx.reply(`✅ Selected house: ${house.title}`, mainKeyboard)
+    } catch (e) {
+        console.error(`[User ${userId}] Error selecting house:`, e)
+        await ctx.answerCbQuery("Error")
+        await ctx.reply("❌ Error selecting house. Please try again.", mainKeyboard)
+    }
 })
 
 bot.hears("❌ End", async (ctx) => {
@@ -331,9 +248,9 @@ bot.hears("❌ End", async (ctx) => {
             await ctx.reply("🤖 Processing your session data with AI...", mainKeyboard)
             const aiResponse = await processHouseDataWithOpenAI(houseId, userId)
             
-            if (aiResponse && aiResponse.title && aiResponse.description) {
+            if (aiResponse && aiResponse.title) {
                 await ctx.reply(
-                    `✅ Session ended!\n\n🏠 ${aiResponse.title}\n\n📋 ${aiResponse.description}`,
+                    `✅ Session ended!\n\n🏠 ${aiResponse.title}`,
                     mainKeyboard
                 )
             } else if (aiResponse && aiResponse.rawResponse) {
@@ -426,10 +343,10 @@ bot.on("voice", async (ctx) => {
 })
 
 // Catch-all: show keyboard for any other message
-bot.on("message", async (ctx) => {
+bot.on("text", async (ctx) => {
     const userId = ctx.from?.id
     const telegramId = userId?.toString()
-    const messageText = ctx.text
+    const messageText = ctx.message.text
     const botInfo = ctx.botInfo
 
     if (!telegramId || !userId) {
@@ -494,6 +411,33 @@ bot.on("message", async (ctx) => {
 
     const hasSession = await isSessionActive(telegramId)
 
+    if (userId && awaitingHouseSearch.has(userId) && messageText) {
+        const query = messageText.trim()
+        if (!query) {
+            return ctx.reply("🔎 Please send a non-empty search term.", mainKeyboard)
+        }
+
+        const houses = await prisma.house.findMany({
+            where: {
+                userId: user.id,
+                title: { contains: query, mode: "insensitive" },
+            },
+            select: { id: true, title: true, updatedAt: true },
+            orderBy: { updatedAt: "desc" },
+            take: 10,
+        })
+
+        if (!houses.length) {
+            return ctx.reply("No houses found. Try another search.", mainKeyboard)
+        }
+
+        const keyboard = Markup.inlineKeyboard(
+            houses.map((h) => [Markup.button.callback(h.title, `select_house:${h.id}`)]),
+        )
+
+        return ctx.reply("Select a house:", keyboard)
+    }
+
     if (hasSession && messageText) {
         console.log(`[User ${userId}] Message: ${messageText}`)
 
@@ -517,7 +461,7 @@ bot.on("message", async (ctx) => {
             }
         } else {
             console.error(`[User ${userId}] No house ID found for this user`)
-            await ctx.reply("❌ No active house found. Please click '➕ Add' first.", mainKeyboard)
+            await ctx.reply("❌ No active house found. Please click '📂 Select' to choose one (or '➕ Add' to create a new one).", mainKeyboard)
         }
     } else {
         await ctx.reply("Use the buttons below:", mainKeyboard)
