@@ -325,7 +325,7 @@ export class HouseService {
             const polygons = await prisma.$queryRaw<any[]>(Prisma.sql`
                 SELECT id, "linkZona", zona, semester
                 FROM "OmiPolygon"
-                WHERE ST_Contains(
+                WHERE ST_Covers(
                     ST_SetSRID(ST_GeomFromGeoJSON("polygonData"::text), 4326),
                     ST_SetSRID(ST_MakePoint(${lon}, ${lat}), 4326)
                 )
@@ -334,7 +334,7 @@ export class HouseService {
 
             const match = polygons?.[0]
             if (match) {
-                console.log(`House ${houseId} is inside OmiPolygon ${match.id} (${match.linkZona})`)
+                console.log(`House ${houseId} is inside OmiPolygon ${match.id} (${match.linkZona}) (lon/lat=[${lon}, ${lat}])`)
 
                 const marketValue = await prisma.omiMarketValue.findFirst({
                     where: {
@@ -369,7 +369,7 @@ export class HouseService {
                     },
                 })
             } else {
-                console.log(`No OmiPolygon found containing houseId: ${houseId}`)
+                console.log(`No OmiPolygon found containing houseId: ${houseId} (lon/lat=[${lon}, ${lat}])`)
             }
         } catch (e) {
             console.error(`PostGIS query failed while calculating price for houseId: ${houseId}`, e)
@@ -653,6 +653,30 @@ export class HouseService {
                 valuation: average.toFixed(2) as any,
             },
         })
+    }
+
+    async printValuationSnapshot(houseId: string, valuationId: string): Promise<void> {
+        const house = await prisma.house.findUnique({
+            where: { id: houseId },
+            select: { valuationHistory: true, title: true },
+        })
+
+        if (!house) {
+            console.log(`[print] House not found: ${houseId}`)
+            return
+        }
+
+        const history = Array.isArray(house.valuationHistory) ? (house.valuationHistory as any[]) : []
+        const snap = history.find((v) => v && typeof v === "object" && v.id === valuationId)
+
+        if (!snap) {
+            console.log(`[print] Valuation snapshot not found: ${valuationId} (house=${houseId})`)
+            return
+        }
+
+        console.log(`[print] House: ${house.title} (${houseId})`) 
+        console.log(`[print] Valuation snapshot: ${valuationId}`)
+        // console.log(JSON.stringify(snap, null, 2))
     }
 
     /**

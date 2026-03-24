@@ -11,6 +11,9 @@ const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN!)
 // Store house IDs per user in memory (sessions are in DB)
 const userHouses = new Map<number, string>()
 
+// Store users we asked to share location (value is the houseId to update)
+const awaitingLocationShare = new Map<number, string>()
+
 // Store users currently searching for a house to select
 const awaitingHouseSearch = new Set<number>()
 
@@ -27,6 +30,74 @@ function extractAddressFromHouseDescription(description?: string | null): string
     } catch {
         return null
     }
+}
+
+function isValidGeoPoint(value: unknown): value is { type: "Point"; coordinates: [number, number] } {
+    if (!value || typeof value !== "object") return false
+    const v = value as any
+    if (v.type !== "Point" || !Array.isArray(v.coordinates) || v.coordinates.length < 2) return false
+    const a = Number(v.coordinates[0])
+    const b = Number(v.coordinates[1])
+    return Number.isFinite(a) && Number.isFinite(b)
+}
+
+async function reverseGeocode(lat: number, lon: number): Promise<{
+    street?: string
+    houseNumber?: string
+    city?: string
+    displayName?: string
+} | null> {
+    try {
+        const url = new URL("https://nominatim.openstreetmap.org/reverse")
+        url.searchParams.set("format", "jsonv2")
+        url.searchParams.set("lat", String(lat))
+        url.searchParams.set("lon", String(lon))
+        url.searchParams.set("addressdetails", "1")
+
+        const res = await fetch(url.toString(), {
+            headers: {
+                "Accept": "application/json",
+                "Accept-Language": "it",
+                "User-Agent": "micasa-value",
+            },
+        })
+
+        if (!res.ok) {
+            return null
+        }
+
+        const json = (await res.json()) as any
+        const addr = json?.address
+        const street = typeof addr?.road === "string" ? addr.road : undefined
+        const houseNumber = typeof addr?.house_number === "string" ? addr.house_number : undefined
+        const cityCandidate = addr?.city ?? addr?.town ?? addr?.village ?? addr?.municipality
+        const city = typeof cityCandidate === "string" ? cityCandidate : undefined
+        const displayName = typeof json?.display_name === "string" ? json.display_name : undefined
+
+        return { street, houseNumber, city, displayName }
+    } catch {
+        return null
+    }
+}
+
+async function maybeAskForLocation(ctx: any, telegramUserId: number, houseId: string) {
+    const house = await prisma.house.findUnique({
+        where: { id: houseId },
+        select: { coordinate: true },
+    })
+
+    if (isValidGeoPoint(house?.coordinate)) {
+        awaitingLocationShare.delete(telegramUserId)
+        return
+    }
+
+    awaitingLocationShare.set(telegramUserId, houseId)
+    await ctx.reply(
+        "📍 This house has no coordinates yet. Do you want to share the location now?",
+        Markup.keyboard([[Markup.button.locationRequest("📍 Share location"), "Skip"]])
+            .resize()
+            .oneTime(),
+    )
 }
 
 // Helper function to process house data with OpenAI when session ends
@@ -144,6 +215,8 @@ bot.hears("➕ Add", async (ctx) => {
             "✅ Session started! Send me messages or voice notes and I'll record them in your house.\n\n⏱️ Session will expire in 1 hour or when you click '❌ End'.",
             mainKeyboard
         )
+
+        await maybeAskForLocation(ctx, telegramUserId, house.id)
     } catch (error) {
         console.error(`[User ${telegramUserId}] Error starting session:`, error)
         await ctx.reply("❌ Error starting session. Please try again.", mainKeyboard)
@@ -202,7 +275,7 @@ bot.action(/^select_house:(.+)$/, async (ctx) => {
 
         const house = await prisma.house.findFirst({
             where: { id: houseId, userId: user.id },
-            select: { id: true, title: true },
+            select: { id: true, title: true, coordinate: true },
         })
 
         if (!house) {
@@ -214,10 +287,78 @@ bot.action(/^select_house:(.+)$/, async (ctx) => {
         awaitingHouseSearch.delete(userId)
         await ctx.answerCbQuery("Selected")
         await ctx.reply(`✅ Selected house: ${house.title}`, mainKeyboard)
+
+        if (!isValidGeoPoint(house.coordinate)) {
+            await maybeAskForLocation(ctx, userId, house.id)
+        }
     } catch (e) {
         console.error(`[User ${userId}] Error selecting house:`, e)
         await ctx.answerCbQuery("Error")
         await ctx.reply("❌ Error selecting house. Please try again.", mainKeyboard)
+    }
+})
+
+bot.hears("Skip", async (ctx) => {
+    const userId = ctx.from?.id
+    if (!userId) return
+    if (awaitingLocationShare.has(userId)) {
+        awaitingLocationShare.delete(userId)
+        await ctx.reply("Okay, skipping location for now.", mainKeyboard)
+    }
+})
+
+bot.on("location", async (ctx) => {
+    const userId = ctx.from?.id
+    if (!userId) return
+
+    const loc = (ctx.message as any)?.location
+    const lat = Number(loc?.latitude)
+    const lon = Number(loc?.longitude)
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+        await ctx.reply("❌ Invalid location received.", mainKeyboard)
+        return
+    }
+
+    const houseId = awaitingLocationShare.get(userId) ?? userHouses.get(userId)
+    if (!houseId) {
+        await ctx.reply("⚠️ No active house selected. Please add or select a house first.", mainKeyboard)
+        return
+    }
+
+    try {
+        await prisma.house.update({
+            where: { id: houseId },
+            data: {
+                coordinate: {
+                    type: "Point",
+                    coordinates: [lat, lon],
+                } as any,
+            },
+        })
+
+        const geo = await reverseGeocode(lat, lon)
+        const addressLine = geo?.street
+            ? `${geo.street}${geo.houseNumber ? ` ${geo.houseNumber}` : ""}${geo.city ? `, ${geo.city}` : ""}`
+            : geo?.displayName
+
+        if (addressLine) {
+            try {
+                await houseService.addBotText(houseId, {
+                    timestamp: new Date().toISOString(),
+                    userId: userId,
+                    message: `Indirizzo: ${addressLine}`,
+                    type: "text",
+                })
+            } catch (e) {
+                console.error(`[User ${userId}] Error saving reverse-geocoded address to botTexts:`, e)
+            }
+        }
+
+        awaitingLocationShare.delete(userId)
+        await ctx.reply("✅ Location saved.", mainKeyboard)
+    } catch (e) {
+        console.error(`[User ${userId}] Error updating house coordinate from Telegram location:`, e)
+        await ctx.reply("❌ Error saving location. Please try again.", mainKeyboard)
     }
 })
 
