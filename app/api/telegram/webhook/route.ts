@@ -3,8 +3,10 @@ import { NextRequest } from "next/server"
 import { openaiService } from "@/lib/openai"
 import { houseService } from "@/lib/services/house.service"
 import { processHouseDataWithOpenAI as processHouseDataWithOpenAIShared } from "@/lib/services/house-ai.service"
+import { houseMediaService } from "@/lib/services/house-media.service"
 import { createSession, getActiveSession, endSession, isSessionActive, cleanupExpiredSessions } from "@/lib/session"
 import prisma from "@/lib/prisma"
+import path from "node:path"
 
 const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN!)
 
@@ -379,13 +381,39 @@ bot.hears("❌ End", async (ctx) => {
 
         // Get house ID before ending session
         const houseId = userHouses.get(userId)
+
+        let hasNewTextOrVoice = false
+        if (houseId) {
+            try {
+                const house = await prisma.house.findUnique({
+                    where: { id: houseId },
+                    select: { botTexts: true },
+                })
+
+                const entries = Array.isArray((house?.botTexts as any)) ? ((house?.botTexts as any) as any[]) : []
+                const startedAtMs = session.startedAt instanceof Date ? session.startedAt.getTime() : Date.parse(String(session.startedAt))
+
+                hasNewTextOrVoice = entries.some((e) => {
+                    if (!e || typeof e !== "object") return false
+                    const type = (e as any).type
+                    if (type !== "text" && type !== "transcription") return false
+                    const ts = (e as any).timestamp
+                    const tsMs = typeof ts === "string" ? Date.parse(ts) : ts instanceof Date ? ts.getTime() : NaN
+                    if (!Number.isFinite(tsMs) || !Number.isFinite(startedAtMs)) return true
+                    return tsMs >= startedAtMs
+                })
+            } catch (e) {
+                console.error(`[User ${userId}] Error checking botTexts for session ${session.id}:`, e)
+                hasNewTextOrVoice = true
+            }
+        }
         
         // End the session
         await endSession(session.id)
         console.log(`[User ${userId}] Ended session ${session.id}`)
         
         // Process house data with OpenAI
-        if (houseId) {
+        if (houseId && hasNewTextOrVoice) {
             await ctx.reply("🤖 Processing your session data with AI...", mainKeyboard)
             const aiResponse = await processHouseDataWithOpenAI(houseId, userId)
             
@@ -400,6 +428,11 @@ bot.hears("❌ End", async (ctx) => {
                 await ctx.reply("✅ Session ended. Bye 👋\n\nClick '➕ Add' to start a new session.", mainKeyboard)
             }
             
+            // Clear house ID from memory
+            userHouses.delete(userId)
+        } else if (houseId) {
+            await ctx.reply("✅ Session ended. Bye 👋\n\nNo new messages to process.", mainKeyboard)
+
             // Clear house ID from memory
             userHouses.delete(userId)
         } else {
@@ -480,6 +513,86 @@ bot.on("voice", async (ctx) => {
         }
     } else {
         await ctx.reply("Click '➕ Add' first to start transcribing voice messages.", mainKeyboard)
+    }
+})
+
+bot.on("photo", async (ctx) => {
+    const userId = ctx.from?.id
+    const telegramId = userId?.toString()
+
+    if (!telegramId || !userId) {
+        return ctx.reply("❌ Error: Cannot identify user.", mainKeyboard)
+    }
+
+    const hasSession = await isSessionActive(telegramId)
+    if (!hasSession) {
+        return ctx.reply("Click '➕ Add' first to start uploading photos.", mainKeyboard)
+    }
+
+    const houseId = userHouses.get(userId)
+    if (!houseId) {
+        return ctx.reply("❌ No active house found. Please click '📂 Select' to choose one (or '➕ Add' to create a new one).", mainKeyboard)
+    }
+
+    try {
+        const photos = (ctx.message as any)?.photo as Array<any> | undefined
+        if (!Array.isArray(photos) || photos.length === 0) {
+            return ctx.reply("❌ No photo received.", mainKeyboard)
+        }
+
+        const best = photos
+            .slice()
+            .sort((a, b) => {
+                const sa = typeof a?.file_size === "number" ? a.file_size : 0
+                const sb = typeof b?.file_size === "number" ? b.file_size : 0
+                return sb - sa
+            })[0]
+
+        const fileId = typeof best?.file_id === "string" ? best.file_id : undefined
+        const fileUniqueId = typeof best?.file_unique_id === "string" ? best.file_unique_id : undefined
+
+        if (!fileId) {
+            return ctx.reply("❌ Invalid photo received.", mainKeyboard)
+        }
+
+        const fileLink = await ctx.telegram.getFileLink(fileId)
+        const ext = path.extname(new URL(fileLink.href).pathname).replace(".", "").toLowerCase() || "jpg"
+
+        const response = await fetch(fileLink.href)
+        const arrayBuffer = await response.arrayBuffer()
+        const buffer = Buffer.from(arrayBuffer)
+
+        const saved = await houseMediaService.saveTelegramPhoto({
+            houseId,
+            buffer,
+            fileId,
+            fileUniqueId,
+            extension: ext,
+            createdAt: new Date(),
+        })
+
+        const house = await prisma.house.findUnique({
+            where: { id: houseId },
+            select: { media: true },
+        })
+
+        const existingMedia = house?.media && typeof house.media === "object" ? (house.media as any) : {}
+        const existingPhotos = Array.isArray(existingMedia.photos) ? existingMedia.photos : []
+
+        await prisma.house.update({
+            where: { id: houseId },
+            data: {
+                media: {
+                    ...existingMedia,
+                    photos: [...existingPhotos, saved.stored],
+                } as any,
+            },
+        })
+
+        await ctx.reply("✅ Photo saved.", mainKeyboard)
+    } catch (e) {
+        console.error(`[User ${userId}] Error saving photo:`, e)
+        await ctx.reply("❌ Error saving photo. Please try again.", mainKeyboard)
     }
 })
 

@@ -4,13 +4,13 @@ import prisma from "@/lib/prisma";
 import { notFound, redirect } from "next/navigation";
 import { houseService } from "@/lib/services/house.service";
 import { processHouseDataWithOpenAI } from "@/lib/services/house-ai.service";
-import { housePdfService } from "@/lib/services/house-pdf.service";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import fs from "node:fs/promises";
 import { PriceParametersEditor } from "@/components/price-parameters-editor";
 import { IndirizzoInlineEditor } from "@/components/indirizzo-inline-editor";
 import { InlineTextEditor } from "@/components/inline-text-editor";
+import { HouseMediaEnhancePanel } from "@/components/house-media-enhance-panel";
 import { Trash2 } from "lucide-react";
 
 export default async function House({ params }: { params: Promise<{ id: string }> }) {
@@ -562,6 +562,11 @@ export default async function House({ params }: { params: Promise<{ id: string }
     "use server";
 
     await houseService.deleteValuationSnapshot(houseId, valuationId)
+    try {
+      const pdfPath = path.join(process.cwd(), "storage", "pdf", houseId, `${valuationId}.pdf`)
+      await fs.unlink(pdfPath)
+    } catch {
+    }
     redirect(`/houses/${houseId}`)
   }
 
@@ -579,6 +584,25 @@ export default async function House({ params }: { params: Promise<{ id: string }
   } catch {
   }
 
+  const media = house.media && typeof house.media === "object" ? (house.media as any) : {}
+  const photos = Array.isArray(media.photos) ? (media.photos as any[]) : []
+  const enhancedPhotos = Array.isArray(media.enhancedPhotos) ? (media.enhancedPhotos as any[]) : []
+  const photoItems = photos
+    .map((p) => {
+      const pth = p && typeof p === "object" ? (p as any).path : null
+      const createdAt = p && typeof p === "object" ? (p as any).createdAt : undefined
+      return typeof pth === "string" && pth ? { path: pth, createdAt: typeof createdAt === "string" ? createdAt : undefined } : null
+    })
+    .filter(Boolean) as Array<{ path: string; createdAt?: string }>
+
+  const enhancedPhotoItems = enhancedPhotos
+    .map((p) => {
+      const pth = p && typeof p === "object" ? (p as any).path : null
+      const createdAt = p && typeof p === "object" ? (p as any).createdAt : undefined
+      return typeof pth === "string" && pth ? { path: pth, createdAt: typeof createdAt === "string" ? createdAt : undefined } : null
+    })
+    .filter(Boolean) as Array<{ path: string; createdAt?: string }>
+
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-8">
       <article className="max-w-3xl w-full bg-white shadow-lg rounded-lg p-8">
@@ -590,6 +614,8 @@ export default async function House({ params }: { params: Promise<{ id: string }
             textClassName="text-5xl font-extrabold text-gray-900"
           />
         </div>
+
+        <HouseMediaEnhancePanel houseId={houseId} photos={photoItems} enhancedPhotos={enhancedPhotoItems} />
 
         <div className="mb-6 flex items-center gap-3">
         <form action={calculateGeom}>

@@ -2,6 +2,7 @@ import prisma from "@/lib/prisma"
 import path from "node:path"
 import fs from "node:fs/promises"
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib"
+import { openaiService } from "@/lib/openai"
 
 type PdfResult = {
   filePath: string
@@ -61,20 +62,65 @@ export class HousePdfService {
     const font = await pdfDoc.embedFont(StandardFonts.Helvetica)
     const bold = await pdfDoc.embedFont(StandardFonts.HelveticaBold)
 
+    const logoPath = path.join(process.cwd(), "storage", "images", "logo-micasa.png")
+    const logoBytes = await fs.readFile(logoPath)
+    const logoImage = await pdfDoc.embedPng(logoBytes)
+
     const pageSize: [number, number] = [595.28, 841.89]
     const margin = 50
     const contentWidth = pageSize[0] - margin * 2
 
+    const headerHeight = 96
+    const footerHeight = 56
+
+    const drawHeaderFooter = () => {
+      const logoTargetHeight = 44
+      const logoScale = logoTargetHeight / logoImage.height
+      const logoW = logoImage.width * logoScale
+      const logoH = logoImage.height * logoScale
+
+      const headerTopY = pageSize[1] - margin
+      const agencyName = "MICASA IMMOBILIARE S.R.L"
+      const h1Size = 18
+      const titleW = bold.widthOfTextAtSize(agencyName, h1Size)
+
+      const centerX = pageSize[0] / 2
+      const logoX = centerX - logoW / 2
+      const logoY = headerTopY - logoH
+      page.drawImage(logoImage, {
+        x: logoX,
+        y: logoY,
+        width: logoW,
+        height: logoH,
+      })
+
+      const textX = centerX - titleW / 2
+      const textY = logoY - 10 - h1Size
+      page.drawText(agencyName, { x: textX, y: textY, size: h1Size, font: bold, color: rgb(0, 0, 0) })
+
+      const footerLines = ["050384015", "050384756", "329 7245601", "info@micasa.it"]
+      const footerSize = 10
+      const footerLineHeight = 12
+      let fy = margin - 6 + (footerLines.length - 1) * footerLineHeight
+      for (const line of footerLines) {
+        const w = font.widthOfTextAtSize(line, footerSize)
+        page.drawText(line, { x: centerX - w / 2, y: fy, size: footerSize, font, color: rgb(0.2, 0.2, 0.2) })
+        fy -= footerLineHeight
+      }
+    }
+
     let page = pdfDoc.addPage(pageSize)
-    let y = pageSize[1] - margin
+    drawHeaderFooter()
+    let y = pageSize[1] - margin - headerHeight
 
     const newPage = () => {
       page = pdfDoc.addPage(pageSize)
-      y = pageSize[1] - margin
+      drawHeaderFooter()
+      y = pageSize[1] - margin - headerHeight
     }
 
     const ensureSpace = (neededHeight: number) => {
-      if (y - neededHeight < margin) {
+      if (y - neededHeight < margin + footerHeight) {
         newPage()
       }
     }
@@ -149,6 +195,54 @@ export class HousePdfService {
     }
     const owner = house.user?.name || house.user?.email || "—"
     drawParagraph(`Owner: ${owner}`)
+
+    let proposalText: string | null = null
+    try {
+      const pricingSummary = {
+        pricing,
+        geometry: pricingCurrent?.geometry ?? null,
+        snapshotResult: snapshot?.result ?? null,
+        configurationFixValues: snapshot?.configurationFixValues ?? null,
+      }
+
+      const houseSummary = {
+        title: house.title ?? null,
+        description: typeof house.description === "string" ? house.description : null,
+        houseParameters,
+        configurations,
+      }
+
+      const payload = JSON.stringify({ house: houseSummary, pricing: pricingSummary })
+      const capped = payload.length > 12_000 ? payload.slice(0, 12_000) : payload
+
+      const messages = [
+        {
+          role: "system" as const,
+          content:
+            "Sei un agente immobiliare professionista. Stai scrivendo una proposta di valutazione per il proprietario. Usa solo le informazioni fornite. Spiega in modo chiaro e credibile come si arriva alla fascia di prezzo (min/max/media), includendo: zona OMI e range €/mq, superficie commerciale e pesi, eventuali aggiustamenti/configurazioni. Non inventare dati mancanti; se qualcosa manca, dichiaralo. Scrivi in italiano.",
+        },
+        {
+          role: "user" as const,
+          content:
+            `Genera un testo strutturato con questi elementi:\n\n- Titolo: "Proposta di valutazione"\n- 5-10 paragrafi brevi\n- Sezione "Come abbiamo calcolato il prezzo" con punti elenco\n- Sezione "Ipotesi e dati mancanti" se necessario\n\nDati disponibili (JSON):\n${capped}`,
+        },
+      ]
+
+      proposalText = (await openaiService.chatWithHistory(messages)).trim() || null
+    } catch {
+      proposalText = null
+    }
+
+    if (proposalText) {
+      y -= 12
+      drawLabel("Proposta di valutazione")
+      for (const part of proposalText.split(/\n\s*\n/)) {
+        const cleaned = part.trim()
+        if (!cleaned) continue
+        drawParagraph(cleaned)
+        y -= 6
+      }
+    }
 
     if (typeof house.description === "string" && house.description.trim()) {
       y -= 8
