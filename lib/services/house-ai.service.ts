@@ -1,7 +1,23 @@
 import { openaiService } from "@/lib/openai"
 import { houseService } from "@/lib/services/house.service"
+import { googlePlacesService } from "@/lib/services/google-places.service"
 import prisma from "@/lib/prisma"
 import { randomUUID } from "node:crypto"
+
+function extractLatLonFromCoordinate(coordinate: unknown): { lat: number; lon: number } | null {
+    if (!coordinate || typeof coordinate !== "object") return null
+    const point = coordinate as any
+    if (point.type !== "Point" || !Array.isArray(point.coordinates) || point.coordinates.length < 2) return null
+
+    const lat = Number(point.coordinates[0])
+    const lon = Number(point.coordinates[1])
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null
+
+    if (lat < -90 || lat > 90) return null
+    if (lon < -180 || lon > 180) return null
+
+    return { lat, lon }
+}
 
 function extractAddressFromHouseDescription(description?: string | null): string | null {
     if (!description) return null
@@ -21,6 +37,23 @@ export async function processHouseDataWithOpenAI(houseId: string, logUserId: str
         if (!house || !house.botTexts) {
             console.log(`[User ${logUserId}] No house data found for processing`)
             return null
+        }
+
+        let nearbyPlacesSummary = ""
+        try {
+            const latLon = extractLatLonFromCoordinate((house as any).coordinate)
+            if (latLon) {
+                const nearby = await googlePlacesService.getNearbyImportantPlaces({
+                    lat: latLon.lat,
+                    lon: latLon.lon,
+                    radiusMeters: 1000,
+                    limitPerCategory: 3,
+                })
+                nearbyPlacesSummary = googlePlacesService.formatNearbyPlacesForPrompt(nearby)
+            }
+        } catch (e) {
+            console.error(`[User ${logUserId}] Failed fetching Google Places nearby results for house ${houseId}:`, e)
+            nearbyPlacesSummary = ""
         }
 
         const botTexts = Array.isArray(house.botTexts) ? house.botTexts : []
@@ -89,7 +122,7 @@ export async function processHouseDataWithOpenAI(houseId: string, logUserId: str
 
                 Inoltre ritorna un Title per la casa: usa l'indirizzo completo per il title e altre informazioni uniche e particolari per rendere la casa distinguibile. La risposta deve andare sotto la chiave title.
 
-                Inoltre scrivi una descrizione "bella", in italiano, adatta ad un annuncio immobiliare, utilizzando solo i dati presenti nei messaggi (se un dato non è presente, non inventarlo). Metti questa descrizione sotto la chiave description.
+                Inoltre scrivi una descrizione "bella", in italiano, adatta ad un annuncio immobiliare, utilizzando solo i dati presenti nei messaggi (se un dato non è presente, non inventarlo). ${nearbyPlacesSummary ? `\n\nIn aggiunta, puoi usare anche queste informazioni esterne su punti di interesse vicini (non inventare dettagli non presenti):\n${nearbyPlacesSummary}` : ""} Metti questa descrizione sotto la chiave description.
 
                 Infine riempi anche quest'altro json ${configurationsJson} della valutazione della casa con le informazioni che trovi nel messaggio di testo ricevuto, e metti la risposta sotto la chiave configurations.
 

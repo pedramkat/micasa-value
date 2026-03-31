@@ -2,6 +2,25 @@ import prisma from "@/lib/prisma";
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 
+export async function GET() {
+  try {
+    const users = await prisma.user.findMany({
+      orderBy: [{ name: "asc" }, { email: "asc" }],
+      select: {
+        id: true,
+        name: true,
+        surname: true,
+        email: true,
+        role: true,
+      },
+    });
+
+    return NextResponse.json(users);
+  } catch (e: any) {
+    return NextResponse.json({ error: e?.message ?? "Failed to fetch users" }, { status: 500 });
+  }
+}
+
 export async function POST(request: Request) {
   const body = (await request.json()) as {
     name?: string;

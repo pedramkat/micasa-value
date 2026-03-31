@@ -50,8 +50,8 @@ export async function PUT(
       data: {
         title,
         description: description || null,
-        fixValue: fixValue ? parseFloat(fixValue) : null,
-        variableValue: variableValue ? parseFloat(variableValue) : null,
+        fixValue: fixValue === 0 || fixValue ? Number.parseFloat(fixValue) : null,
+        variableValue: variableValue === 0 || variableValue ? Number.parseFloat(variableValue) : null,
         properties: properties || null,
         propertyValuation: propertyValuation || false,
         houseValuation: houseValuation || false,

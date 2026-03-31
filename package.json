@@ -11,7 +11,8 @@
     "import:omi:market-values": "tsx scripts/import-omi-market-values.ts",
     "import:omi:zones": "tsx scripts/import-omi-zones.ts",
     "import:omi:polygons": "tsx scripts/import-omi-polygons.ts",
-    "geodecode": "tsx scripts/geodecode.ts"
+    "geodecode": "tsx scripts/geodecode.ts",
+    "google:places": "tsx scripts/google-places-test.ts"
   },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.28",

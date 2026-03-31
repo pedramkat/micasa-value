@@ -656,19 +656,6 @@ export default async function House({
         </Card>
       </div>
 
-      <div className="mt-4 grid gap-4 sm:grid-cols-3">
-        <div className="sm:col-span-1">
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">Owner</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <OwnerSelect currentUserName={house.owner?.name || house.user?.name || ""} />
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-
       {(houseParameterEntries.length > 0 || houseParametersByKey) && (
         <section className="rounded-xl border border-border bg-card p-5">
           <h2 className="text-base font-semibold">House parameters</h2>
@@ -776,6 +763,19 @@ export default async function House({
           <p className="mt-2 text-sm text-muted-foreground">No valid coordinates available for this house.</p>
         )}
       </section>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Owner</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <OwnerSelect
+            houseId={houseId}
+            currentOwnerId={house.ownerId}
+            currentUserName={house.owner?.name || house.user?.name || ""}
+          />
+        </CardContent>
+      </Card>
 
       <section className="rounded-xl border border-border bg-card p-5 flex items-center justify-between">
         <div className="text-sm">
