@@ -54,7 +54,7 @@ export function InlineTextEditor({
 
   return (
     <div className={className}>
-      {label && <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">{label}</div>}
+      {label && <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</div>}
 
       {isEditing ? (
         multiline ? (
@@ -65,7 +65,7 @@ export function InlineTextEditor({
             onChange={(e) => setValue(e.target.value)}
             onBlur={commit}
             rows={6}
-            className="mt-1 w-full resize-y rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 ring-1 ring-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-300 disabled:opacity-50"
+            className="mt-1 w-full resize-y rounded-md bg-background px-3 py-2 text-sm font-semibold text-foreground ring-1 ring-border focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
           />
         ) : (
           <input
@@ -86,7 +86,7 @@ export function InlineTextEditor({
                 setIsEditing(false)
               }
             }}
-            className="mt-1 w-full rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 ring-1 ring-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-300 disabled:opacity-50"
+            className="mt-1 w-full rounded-md bg-background px-3 py-2 text-sm font-semibold text-foreground ring-1 ring-border focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
           />
         )
       ) : (
@@ -96,7 +96,7 @@ export function InlineTextEditor({
             setError(null)
             setIsEditing(true)
           }}
-          className={`mt-1 block w-full rounded-md bg-transparent text-left hover:bg-gray-50 ${textClassName ?? ""}`}
+          className={`mt-1 block w-full rounded-md bg-transparent text-left hover:bg-muted ${textClassName ?? ""}`}
         >
           {value.trim() ? value : placeholder ?? "Click to edit"}
         </button>

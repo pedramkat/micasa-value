@@ -17,6 +17,7 @@ export class HousePdfService {
         id: true,
         title: true,
         description: true,
+        owner: { select: { name: true, email: true } },
         user: { select: { name: true, email: true } },
         aiCurrent: true,
         valuationHistory: true,
@@ -193,8 +194,8 @@ export class HousePdfService {
     if (typeof snapshot?.timestamp === "string") {
       drawParagraph(`Timestamp: ${snapshot.timestamp}`)
     }
-    const owner = house.user?.name || house.user?.email || "—"
-    drawParagraph(`Owner: ${owner}`)
+    const ownerName = house.owner?.name || house.owner?.email || house.user?.name || house.user?.email || "—"
+    drawParagraph(`Owner: ${ownerName}`)
 
     let proposalText: string | null = null
     try {

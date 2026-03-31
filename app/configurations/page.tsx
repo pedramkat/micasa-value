@@ -2,6 +2,10 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { Loader2, Plus, Settings2, Trash2 } from "lucide-react";
+
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 interface Configuration {
   id: string;
@@ -57,87 +61,115 @@ export default function ConfigurationsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-8">
-      <div className="max-w-6xl mx-auto">
-        <div className="flex justify-between items-center mb-8">
-          <h1 className="text-4xl font-bold text-gray-900">Configurations</h1>
-          <Link
-            href="/configurations/new"
-            className="bg-purple-500 text-white px-6 py-3 rounded-lg hover:bg-purple-600 transition"
-          >
-            New Configuration
-          </Link>
+    <div className="p-4 lg:p-8 max-w-6xl mx-auto space-y-6">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Configurations</h1>
+          <p className="text-sm text-muted-foreground mt-1">Manage pricing and house valuation parameters.</p>
         </div>
+        <Button asChild className="gap-2">
+          <Link href="/configurations/new">
+            <Plus className="h-4 w-4" />
+            New configuration
+          </Link>
+        </Button>
+      </div>
 
         {isLoading ? (
-          <div className="flex items-center justify-center space-x-2 min-h-[200px]">
-            <div className="w-6 h-6 border-4 border-purple-500 border-t-transparent rounded-full animate-spin"></div>
-            <p className="text-gray-600">Loading...</p>
+          <div className="flex items-center justify-center gap-2 min-h-[220px] text-muted-foreground">
+            <Loader2 className="h-5 w-5 animate-spin" />
+            <span className="text-sm font-medium">Loading...</span>
           </div>
         ) : error ? (
-          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
-            {error}
-          </div>
+          <Card className="border-destructive/30">
+            <CardContent className="p-4">
+              <div className="text-sm font-medium text-destructive">{error}</div>
+            </CardContent>
+          </Card>
         ) : configurations.length === 0 ? (
-          <p className="text-gray-600 text-center py-8">No configurations available.</p>
-        ) : (
-          <div className="grid gap-6">
-            {configurations.map((config) => (
-              <div key={config.id} className="bg-white shadow-md rounded-lg p-6">
-                <div className="flex justify-between items-start">
-                  <div className="flex-1">
-                    <Link href={`/configurations/${config.id}`}>
-                      <h2 className="text-2xl font-semibold text-gray-900 hover:text-purple-600 cursor-pointer">
-                        {config.title}
-                      </h2>
-                    </Link>
-                    {config.description && (
-                      <p className="text-gray-600 mt-2">{config.description}</p>
-                    )}
-                    <div className="mt-4 grid grid-cols-2 gap-4 text-sm text-gray-900">
-                      {config.fixValue && (
-                        <div>
-                          <span className="font-medium">Fix Value:</span> %{config.fixValue}
-                        </div>
-                      )}
-                      {config.variableValue && (
-                        <div>
-                          <span className="font-medium">Variable Value:</span> %{config.variableValue}
-                        </div>
-                      )}
-                      <div>
-                        <span className="font-medium">Property Valuation:</span>{" "}
-                        {config.propertyValuation ? "✅ Yes" : "❌ No"}
-                      </div>
-                      <div>
-                        <span className="font-medium">House Valuation:</span>{" "}
-                        {config.houseValuation ? "✅ Yes" : "❌ No"}
-                      </div>
-                    </div>
-                    <p className="text-xs text-gray-400 mt-4">
-                      Created: {new Date(config.createdAt).toLocaleDateString()}
-                    </p>
-                  </div>
-                  <div className="flex space-x-2 ml-4">
-                    <Link
-                      href={`/configurations/${config.id}`}
-                      className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 transition text-sm"
-                    >
-                      Edit
-                    </Link>
-                    <button
-                      onClick={() => deleteConfiguration(config.id)}
-                      className="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600 transition text-sm"
-                    >
-                      Delete
-                    </button>
-                  </div>
-                </div>
+          <Card>
+            <CardContent className="p-8 text-center">
+              <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-primary/10 text-primary">
+                <Settings2 className="h-5 w-5" />
               </div>
+              <div className="text-base font-semibold">No configurations available</div>
+              <div className="mt-1 text-sm text-muted-foreground">Create your first configuration to tune valuations.</div>
+              <div className="mt-5">
+                <Button asChild className="gap-2">
+                  <Link href="/configurations/new">
+                    <Plus className="h-4 w-4" />
+                    New configuration
+                  </Link>
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="grid gap-4">
+            {configurations.map((config) => (
+              <Card key={config.id} className="hover:shadow-md transition-shadow">
+                <CardHeader className="pb-3">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="min-w-0">
+                      <CardTitle className="text-base">
+                        <Link href={`/configurations/${config.id}`} className="hover:underline">
+                          {config.title}
+                        </Link>
+                      </CardTitle>
+                      {config.description && (
+                        <p className="mt-2 text-sm text-muted-foreground">{config.description}</p>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <Button asChild variant="outline" size="sm">
+                        <Link href={`/configurations/${config.id}`}>Edit</Link>
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        className="text-destructive hover:text-destructive"
+                        onClick={() => deleteConfiguration(config.id)}
+                        aria-label="Delete configuration"
+                        title="Delete"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="pt-0">
+                  <div className="mt-1 grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                    {config.fixValue !== undefined && config.fixValue !== null && (
+                      <div className="rounded-lg bg-muted/30 px-3.5 py-2.5">
+                        <span className="text-muted-foreground">Fix Value</span>
+                        <div className="font-semibold mt-0.5">%{config.fixValue}</div>
+                      </div>
+                    )}
+                    {config.variableValue !== undefined && config.variableValue !== null && (
+                      <div className="rounded-lg bg-muted/30 px-3.5 py-2.5">
+                        <span className="text-muted-foreground">Variable Value</span>
+                        <div className="font-semibold mt-0.5">%{config.variableValue}</div>
+                      </div>
+                    )}
+                    <div className="rounded-lg bg-muted/30 px-3.5 py-2.5">
+                      <span className="text-muted-foreground">Property Valuation</span>
+                      <div className="font-semibold mt-0.5">{config.propertyValuation ? "Yes" : "No"}</div>
+                    </div>
+                    <div className="rounded-lg bg-muted/30 px-3.5 py-2.5">
+                      <span className="text-muted-foreground">House Valuation</span>
+                      <div className="font-semibold mt-0.5">{config.houseValuation ? "Yes" : "No"}</div>
+                    </div>
+                  </div>
+
+                  <p className="text-xs text-muted-foreground mt-4">
+                    Created: {new Date(config.createdAt).toLocaleDateString()}
+                  </p>
+                </CardContent>
+              </Card>
             ))}
           </div>
         )}
-      </div>
     </div>
   );
 }

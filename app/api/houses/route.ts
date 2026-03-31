@@ -12,7 +12,10 @@ export async function GET(request: Request) {
     skip: offset,
     take: housesPerPage,
     orderBy: { createdAt: "desc" },
-    include: { user: { select: { name: true } } },
+    include: {
+      user: { select: { name: true } },
+      owner: { select: { name: true } },
+    },
   });
 
   const totalHouses = await prisma.house.count();

@@ -2,6 +2,13 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { ArrowLeft, Loader2, Save, Settings2 } from "lucide-react";
+
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 
 interface Configuration {
   id: string;
@@ -99,141 +106,115 @@ export default function EditConfiguration({ params }: { params: Promise<{ id: st
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="w-10 h-10 border-4 border-purple-500 border-t-transparent rounded-full animate-spin"></div>
+      <div className="flex items-center justify-center min-h-[220px] gap-2 text-muted-foreground">
+        <Loader2 className="h-5 w-5 animate-spin" />
+        <span className="text-sm font-medium">Loading...</span>
       </div>
     );
   }
 
   if (error && !config) {
     return (
-      <div className="max-w-4xl mx-auto p-8">
-        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
-          {error}
-        </div>
+      <div className="p-4 lg:p-8 max-w-4xl mx-auto">
+        <Card className="border-destructive/30">
+          <CardContent className="p-4">
+            <div className="text-sm font-medium text-destructive">{error}</div>
+          </CardContent>
+        </Card>
       </div>
     );
   }
 
   return (
-    <div className="max-w-4xl mx-auto p-8 text-gray-900">
-      <h1 className="text-3xl font-bold mb-6">Edit Configuration</h1>
-      <form onSubmit={handleSubmit} className="space-y-6 bg-white p-8 rounded-lg shadow-md">
-        {error && (
-          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
-            {error}
-          </div>
-        )}
+    <div className="p-4 lg:p-8 max-w-4xl mx-auto space-y-6">
+      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+        <Link href="/configurations" className="flex items-center gap-1 hover:text-foreground transition-colors">
+          <ArrowLeft className="h-4 w-4" /> Configurations
+        </Link>
+        <span>/</span>
+        <span className="text-foreground font-medium truncate">Edit</span>
+      </div>
 
-        <div>
-          <label htmlFor="title" className="flex text-lg font-medium mb-2 items-center">
-            Title
-            <span className="ml-2 px-2 py-1 text-xs font-semibold text-white bg-gray-500 rounded-lg">
-              Required
-            </span>
-          </label>
-          <input
-            type="text"
-            id="title"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            required
-            className="w-full px-4 py-2 border rounded-lg"
-          />
-        </div>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-xl flex items-center gap-2">
+            <Settings2 className="h-5 w-5 text-primary" />
+            Edit configuration
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleSubmit} className="space-y-5">
+            {error && (
+              <div className="text-sm font-medium text-destructive">{error}</div>
+            )}
 
-        <div>
-          <label htmlFor="description" className="block text-lg font-medium mb-2">
-            Description
-          </label>
-          <textarea
-            id="description"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            rows={3}
-            className="w-full px-4 py-2 border rounded-lg"
-          />
-        </div>
+            <div className="space-y-2">
+              <label htmlFor="title" className="text-sm font-medium">Title</label>
+              <Input id="title" value={title} onChange={(e) => setTitle(e.target.value)} required />
+            </div>
 
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label htmlFor="fixValue" className="block text-lg font-medium mb-2">
-              Fix Value (%)
-            </label>
-            <input
-              type="number"
-              id="fixValue"
-              value={fixValue}
-              onChange={(e) => setFixValue(e.target.value)}
-              step="0.01"
-              className="w-full px-4 py-2 border rounded-lg"
-            />
-          </div>
+            <div className="space-y-2">
+              <label htmlFor="description" className="text-sm font-medium">Description</label>
+              <Textarea id="description" value={description} onChange={(e) => setDescription(e.target.value)} rows={3} />
+            </div>
 
-          <div>
-            <label htmlFor="variableValue" className="block text-lg font-medium mb-2">
-              Variable Value (%)
-            </label>
-            <input
-              type="number"
-              id="variableValue"
-              value={variableValue}
-              onChange={(e) => setVariableValue(e.target.value)}
-              step="0.01"
-              className="w-full px-4 py-2 border rounded-lg"
-            />
-          </div>
-        </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <label htmlFor="fixValue" className="text-sm font-medium">Fix Value (%)</label>
+                <Input id="fixValue" type="number" value={fixValue} onChange={(e) => setFixValue(e.target.value)} step="0.01" />
+              </div>
+              <div className="space-y-2">
+                <label htmlFor="variableValue" className="text-sm font-medium">Variable Value (%)</label>
+                <Input id="variableValue" type="number" value={variableValue} onChange={(e) => setVariableValue(e.target.value)} step="0.01" />
+              </div>
+            </div>
 
-        <div>
-          <label htmlFor="properties" className="block text-lg font-medium mb-2">
-            Properties (JSON)
-          </label>
-          <textarea
-            id="properties"
-            value={properties}
-            onChange={(e) => setProperties(e.target.value)}
-            rows={6}
-            className="w-full px-4 py-2 border rounded-lg font-mono text-sm"
-          />
-        </div>
+            <div className="space-y-2">
+              <label htmlFor="properties" className="text-sm font-medium">Properties (JSON)</label>
+              <Textarea
+                id="properties"
+                value={properties}
+                onChange={(e) => setProperties(e.target.value)}
+                rows={8}
+                className="font-mono text-sm"
+              />
+            </div>
 
-        <div className="flex space-x-6">
-          <div className="flex items-center">
-            <input
-              type="checkbox"
-              id="propertyValuation"
-              checked={propertyValuation}
-              onChange={(e) => setPropertyValuation(e.target.checked)}
-              className="w-5 h-5 text-purple-600 rounded"
-            />
-            <label htmlFor="propertyValuation" className="ml-2 text-lg font-medium">
-              Property Valuation
-            </label>
-          </div>
+            <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+              <label className="flex items-center gap-2 text-sm font-medium">
+                <input
+                  type="checkbox"
+                  id="propertyValuation"
+                  checked={propertyValuation}
+                  onChange={(e) => setPropertyValuation(e.target.checked)}
+                  className="h-4 w-4 rounded border-input"
+                />
+                Property Valuation
+              </label>
+              <label className="flex items-center gap-2 text-sm font-medium">
+                <input
+                  type="checkbox"
+                  id="houseValuation"
+                  checked={houseValuation}
+                  onChange={(e) => setHouseValuation(e.target.checked)}
+                  className="h-4 w-4 rounded border-input"
+                />
+                House Valuation
+              </label>
+            </div>
 
-          <div className="flex items-center">
-            <input
-              type="checkbox"
-              id="houseValuation"
-              checked={houseValuation}
-              onChange={(e) => setHouseValuation(e.target.checked)}
-              className="w-5 h-5 text-purple-600 rounded"
-            />
-            <label htmlFor="houseValuation" className="ml-2 text-lg font-medium">
-              House Valuation
-            </label>
-          </div>
-        </div>
-
-        <button
-          type="submit"
-          disabled={isSaving}
-          className="w-full bg-purple-500 text-white py-3 rounded-lg hover:bg-purple-600 transition font-semibold disabled:bg-gray-400"
-        >
-          {isSaving ? "Saving..." : "Update Configuration"}
-        </button>
-      </form>
+            <div className="flex items-center justify-end gap-2">
+              <Button asChild variant="outline">
+                <Link href="/configurations">Cancel</Link>
+              </Button>
+              <Button type="submit" disabled={isSaving} className="gap-2">
+                {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                {isSaving ? "Saving..." : "Save changes"}
+              </Button>
+            </div>
+          </form>
+        </CardContent>
+      </Card>
     </div>
   );
 }

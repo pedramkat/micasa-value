@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic"; // This disables SSG and ISR
 
 import prisma from "@/lib/prisma";
 import { notFound, redirect } from "next/navigation";
+import Link from "next/link";
 import { houseService } from "@/lib/services/house.service";
 import { processHouseDataWithOpenAI } from "@/lib/services/house-ai.service";
 import { randomUUID } from "node:crypto";
@@ -11,16 +12,34 @@ import { PriceParametersEditor } from "@/components/price-parameters-editor";
 import { IndirizzoInlineEditor } from "@/components/indirizzo-inline-editor";
 import { InlineTextEditor } from "@/components/inline-text-editor";
 import { HouseMediaEnhancePanel } from "@/components/house-media-enhance-panel";
-import { Trash2 } from "lucide-react";
+import { HouseDetailTabs } from "@/components/house-detail-tabs";
+import { OwnerSelect } from "@/components/house/OwnerSelect";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { MarketMetricsCards } from "@/components/house/MarketMetricsCards";
+import { PriceHistoryChart } from "@/components/house/PriceHistoryChart";
+import { IstatComparisonChart } from "@/components/house/IstatComparisonChart";
+import { ZonePriceMap } from "@/components/house/ZonePriceMap";
+import { generatePriceHistory, getMarketMetrics, getZonesForCity } from "@/lib/market-data";
+import { ArrowLeft, MapPin, Calculator, Brain, Trash2, Eye, FileText } from "lucide-react";
 
-export default async function House({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
-  const houseId = id;
+export default async function House({
+  params,
+}: {
+  params: { id?: string } | Promise<{ id?: string }>
+}) {
+  const resolvedParams = await Promise.resolve(params)
+  const houseId = typeof resolvedParams?.id === "string" ? resolvedParams.id : ""
+
+  if (!houseId) {
+    notFound()
+  }
 
   const house = await prisma.house.findUnique({
     where: { id: houseId },
     include: {
       user: true,
+      owner: true,
     },
   });
 
@@ -300,6 +319,8 @@ export default async function House({ params }: { params: Promise<{ id: string }
     currency: "EUR",
     maximumFractionDigits: 0,
   })
+
+  const avgEstimate = totalMin !== null && totalMax !== null ? (totalMin + totalMax) / 2 : null
 
   const point = (house as any)?.coordinate
   const coordinateLatLon = (() => {
@@ -603,280 +624,407 @@ export default async function House({ params }: { params: Promise<{ id: string }
     })
     .filter(Boolean) as Array<{ path: string; createdAt?: string }>
 
-  return (
-    <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-8">
-      <article className="max-w-3xl w-full bg-white shadow-lg rounded-lg p-8">
-        {/* House Title */}
-        <div className="mb-4">
-          <InlineTextEditor
-            initialValue={house.title}
-            onSave={saveHouseTitle}
-            textClassName="text-5xl font-extrabold text-gray-900"
-          />
+  const overviewNode = (
+    <>
+      <div className="grid gap-4 sm:grid-cols-3">
+        <Card>
+          <CardContent className="p-5">
+            <p className="text-sm text-muted-foreground">Estimated Value</p>
+            <p className="text-2xl font-bold mt-1">{avgEstimate !== null ? eur.format(avgEstimate) : "—"}</p>
+            {totalMin !== null && totalMax !== null && (
+              <p className="text-xs text-muted-foreground mt-1">
+                {eur.format(totalMin)} – {eur.format(totalMax)}
+              </p>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="p-5">
+            <p className="text-sm text-muted-foreground">Photos</p>
+            <p className="text-2xl font-bold mt-1">{photoItems.length}</p>
+            <p className="text-xs text-muted-foreground mt-1">{enhancedPhotoItems.length} enhanced</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="p-5">
+            <p className="text-sm text-muted-foreground">Valuations</p>
+            <p className="text-2xl font-bold mt-1">{evaluationsRecentFirst.length}</p>
+            <p className="text-xs text-muted-foreground mt-1">{pdfByValuationId.size} with PDF</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="mt-4 grid gap-4 sm:grid-cols-3">
+        <div className="sm:col-span-1">
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Owner</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <OwnerSelect currentUserName={house.owner?.name || house.user?.name || ""} />
+            </CardContent>
+          </Card>
         </div>
+      </div>
 
-        <HouseMediaEnhancePanel houseId={houseId} photos={photoItems} enhancedPhotos={enhancedPhotoItems} />
+      {(houseParameterEntries.length > 0 || houseParametersByKey) && (
+        <section className="rounded-xl border border-border bg-card p-5">
+          <h2 className="text-base font-semibold">House parameters</h2>
+          <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div className="sm:col-span-3">
+              <IndirizzoInlineEditor initialValue={indirizzoValue} onSave={saveIndirizzo} />
+            </div>
 
-        <div className="mb-6 flex items-center gap-3">
-        <form action={calculateGeom}>
-          <button
-            type="submit"
-            className="px-6 py-3 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700 transition-colors"
-          >
-            Calculate geom
-          </button>
-        </form>
+            <div className="sm:col-span-3">
+              <form action={addHouseParameter} className="flex flex-col gap-2 sm:flex-row sm:items-end">
+                <div className="flex-1">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Add house parameter</div>
+                  <input
+                    name="key"
+                    list="house-parameter-keys"
+                    placeholder="Search parameter…"
+                    className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm font-semibold"
+                  />
+                  <datalist id="house-parameter-keys">
+                    {houseParametersPropertyKeys.map((k) => (
+                      <option key={k} value={k} />
+                    ))}
+                  </datalist>
+                </div>
 
-        <form id="calculate-price-form" action={calculatePrice}>
-          <button
-            type="submit"
-            className="px-6 py-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition-colors"
-          >
-            Calculate price
-          </button>
-        </form>
+                <div className="flex-1">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Value</div>
+                  <input
+                    name="value"
+                    placeholder="Value (type-aware)"
+                    className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm font-semibold"
+                  />
+                </div>
 
-        <form action={regenerateAI}>
-          <button
-            type="submit"
-            className="px-6 py-3 bg-purple-600 text-white font-semibold rounded-lg hover:bg-purple-700 transition-colors"
-          >
-            Regenerate AI
-          </button>
-        </form>
-        </div>
+                <button
+                  type="submit"
+                  className="inline-flex h-10 items-center justify-center rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground hover:bg-primary/90 transition-colors"
+                >
+                  Add
+                </button>
+              </form>
+            </div>
 
-        {(totalMin !== null || totalMax !== null) && (
-          <section className="mb-8 rounded-xl border border-gray-200 bg-gradient-to-r from-gray-50 to-white p-5">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <div className="text-sm font-semibold text-gray-500">Average price estimate</div>
-                <div className="mt-1 text-2xl font-extrabold text-gray-900">
-                  {totalMin !== null && totalMax !== null
-                    ? eur.format((totalMin + totalMax) / 2)
-                    : totalMin !== null
-                      ? eur.format(totalMin)
-                      : totalMax !== null
-                        ? eur.format(totalMax)
-                        : "—"}
+            {houseParameterEntries.map((p) => (
+              <div key={p.key} className="rounded-lg bg-muted/20 px-4 py-3 ring-1 ring-border">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{p.key}</div>
+                    <div className="mt-1 text-sm font-semibold break-words">{formatHouseParameterValue(p.value)}</div>
+                  </div>
+
+                  <form action={removeHouseParameter.bind(null, p.key)} className="shrink-0">
+                    <button
+                      type="submit"
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-md bg-background text-muted-foreground ring-1 ring-border hover:bg-accent hover:text-foreground"
+                      aria-label={`Remove ${p.key}`}
+                      title="Remove"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </form>
                 </div>
               </div>
+            ))}
+          </div>
+        </section>
+      )}
 
-              <div className="grid grid-cols-2 gap-3">
-                <div className="rounded-lg bg-white px-4 py-3 shadow-sm ring-1 ring-gray-100">
-                  <div className="text-xs font-semibold text-gray-500">Min</div>
-                  <div className="mt-1 text-lg font-bold text-gray-900">
-                    {totalMin !== null ? eur.format(totalMin) : "—"}
-                  </div>
-                </div>
-                <div className="rounded-lg bg-white px-4 py-3 shadow-sm ring-1 ring-gray-100">
-                  <div className="text-xs font-semibold text-gray-500">Max</div>
-                  <div className="mt-1 text-lg font-bold text-gray-900">
-                    {totalMax !== null ? eur.format(totalMax) : "—"}
-                  </div>
-                </div>
+      <section className="rounded-xl border border-border bg-card p-5">
+        <h2 className="text-base font-semibold">Description</h2>
+        <div className="mt-3 text-sm text-muted-foreground leading-relaxed">
+          <InlineTextEditor
+            initialValue={house.description ?? ""}
+            placeholder="No description available for this house. Click to add one."
+            multiline
+            onSave={saveHouseDescription}
+            textClassName="whitespace-pre-wrap text-sm text-muted-foreground leading-relaxed"
+          />
+        </div>
+      </section>
+
+      <section className="rounded-xl border border-border bg-card p-5">
+        <h2 className="text-base font-semibold">Location</h2>
+        {coordinateLatLon ? (
+          <div className="mt-4 overflow-hidden rounded-xl bg-muted h-64">
+            <iframe
+              title="House location"
+              className="h-full w-full border-0"
+              loading="lazy"
+              referrerPolicy="no-referrer-when-downgrade"
+              src={(() => {
+                const { lat, lon } = coordinateLatLon
+                const delta = 0.001
+                const left = lon - delta
+                const right = lon + delta
+                const top = lat + delta
+                const bottom = lat - delta
+                const bbox = `${left}%2C${bottom}%2C${right}%2C${top}`
+                const marker = `${lat}%2C${lon}`
+                return `https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik&marker=${marker}`
+              })()}
+            />
+          </div>
+        ) : (
+          <p className="mt-2 text-sm text-muted-foreground">No valid coordinates available for this house.</p>
+        )}
+      </section>
+
+      <section className="rounded-xl border border-border bg-card p-5 flex items-center justify-between">
+        <div className="text-sm">
+          <div className="font-medium">{house.user?.name || "Anonymous"}</div>
+          <div className="text-xs text-muted-foreground">Agent</div>
+        </div>
+        <div className="text-xs text-muted-foreground">
+          Updated {new Date(house.updatedAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
+        </div>
+      </section>
+    </>
+  )
+
+  const mediaNode = (
+    <div className="space-y-6">
+      <HouseMediaEnhancePanel houseId={houseId} photos={photoItems} enhancedPhotos={enhancedPhotoItems} />
+    </div>
+  )
+
+  const analyticsNode = (
+    <>
+      {(() => {
+        const metrics = getMarketMetrics(houseId)
+        const priceHistory = generatePriceHistory(avgEstimate ?? 400000)
+        const zones = getZonesForCity(indirizzoValue || houseId)
+        return (
+          <>
+            <MarketMetricsCards metrics={metrics} />
+            <div className="grid gap-6 lg:grid-cols-2">
+              <PriceHistoryChart data={priceHistory} yoyChange={metrics.yoyChange} />
+              <IstatComparisonChart zones={zones} activeZone={metrics.zone} />
+            </div>
+            <ZonePriceMap zones={zones} activeZone={metrics.zone} coordinate={coordinateLatLon} />
+          </>
+        )
+      })()}
+    </>
+  )
+
+  const valuationNode = (
+    <div className="space-y-6">
+      {(totalMin !== null || totalMax !== null) && (
+        <section className="rounded-xl border border-border bg-card p-5">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <div className="text-sm font-semibold text-muted-foreground">Average price estimate</div>
+              <div className="mt-1 text-2xl font-extrabold text-foreground">
+                {totalMin !== null && totalMax !== null
+                  ? eur.format((totalMin + totalMax) / 2)
+                  : totalMin !== null
+                    ? eur.format(totalMin)
+                    : totalMax !== null
+                      ? eur.format(totalMax)
+                      : "—"}
               </div>
             </div>
 
-            {evaluationsRecentFirst.length > 0 && (
-              <div className="mt-5 rounded-lg bg-white/70 px-4 py-3 ring-1 ring-gray-100">
-                <div className="text-sm font-semibold text-gray-700">All evaluations ({evaluationsRecentFirst.length})</div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-lg bg-muted/20 px-4 py-3 ring-1 ring-border">
+                <div className="text-xs font-semibold text-muted-foreground">Min</div>
+                <div className="mt-1 text-lg font-bold text-foreground">{totalMin !== null ? eur.format(totalMin) : "—"}</div>
+              </div>
+              <div className="rounded-lg bg-muted/20 px-4 py-3 ring-1 ring-border">
+                <div className="text-xs font-semibold text-muted-foreground">Max</div>
+                <div className="mt-1 text-lg font-bold text-foreground">{totalMax !== null ? eur.format(totalMax) : "—"}</div>
+              </div>
+            </div>
+          </div>
 
-                <div className="mt-3 space-y-2">
-                  {evaluationsRecentFirst.map((v, idx) => {
-                    const id = typeof v?.id === "string" ? v.id : null
-                    const ts = typeof v?.timestamp === "string" ? v.timestamp : null
-                    const minRaw = v?.result?.min
-                    const maxRaw = v?.result?.max
-                    const avgRaw = v?.result?.avg
+          {evaluationsRecentFirst.length > 0 && (
+            <div className="mt-5 rounded-lg bg-muted/20 px-4 py-3 ring-1 ring-border">
+              <div className="text-sm font-semibold">All evaluations ({evaluationsRecentFirst.length})</div>
 
-                    const configurationFixValuesRaw = Array.isArray(v?.configurationFixValues)
-                      ? (v.configurationFixValues as any[])
-                      : []
+              <div className="mt-3 space-y-2">
+                {evaluationsRecentFirst.map((v, idx) => {
+                  const id = typeof v?.id === "string" ? v.id : null
+                  const ts = typeof v?.timestamp === "string" ? v.timestamp : null
+                  const minRaw = v?.result?.min
+                  const maxRaw = v?.result?.max
+                  const avgRaw = v?.result?.avg
 
-                    const inputs = v?.inputs && typeof v.inputs === "object" ? (v.inputs as any) : null
-                    const inputConfigurations = Array.isArray(inputs?.configurations) ? (inputs.configurations as any[]) : []
+                  const configurationFixValuesRaw = Array.isArray(v?.configurationFixValues) ? (v.configurationFixValues as any[]) : []
 
-                    const configurationTitlesForEvaluation = Array.from(
-                      new Set(
-                        [...inputConfigurations, ...configurationFixValuesRaw.map((x) => x?.title)]
-                          .filter((t) => typeof t === "string" && t.trim()) as string[],
-                      ),
-                    )
+                  const inputs = v?.inputs && typeof v.inputs === "object" ? (v.inputs as any) : null
+                  const inputConfigurations = Array.isArray(inputs?.configurations) ? (inputs.configurations as any[]) : []
 
-                    const pricing = v?.pricingCurrent?.pricing && typeof v.pricingCurrent.pricing === "object" ? (v.pricingCurrent.pricing as any) : null
-                    const pricingTotal = pricing?.total && typeof pricing.total === "object" ? (pricing.total as any) : null
-                    const pricingAdjustments = Array.isArray(pricing?.adjustments) ? (pricing.adjustments as any[]) : []
+                  const configurationTitlesForEvaluation = Array.from(
+                    new Set(
+                      [...inputConfigurations, ...configurationFixValuesRaw.map((x) => x?.title)].filter(
+                        (t) => typeof t === "string" && t.trim(),
+                      ) as string[],
+                    ),
+                  )
 
-                    const baseEurPerSqm = pricing?.baseEurPerSqm && typeof pricing.baseEurPerSqm === "object" ? (pricing.baseEurPerSqm as any) : null
-                    const superficieCommercialeRaw = pricing?.superficieCommerciale
-                    const superficieCommerciale =
-                      typeof superficieCommercialeRaw === "string" || typeof superficieCommercialeRaw === "number"
-                        ? Number(superficieCommercialeRaw)
-                        : Number.NaN
+                  const pricing = v?.pricingCurrent?.pricing && typeof v.pricingCurrent.pricing === "object" ? (v.pricingCurrent.pricing as any) : null
+                  const pricingTotal = pricing?.total && typeof pricing.total === "object" ? (pricing.total as any) : null
+                  const pricingAdjustments = Array.isArray(pricing?.adjustments) ? (pricing.adjustments as any[]) : []
 
-                    const adjustedEurPerSqmMin =
-                      Number.isFinite(superficieCommerciale) && superficieCommerciale > 0 && pricingTotal?.comprMin
-                        ? Number(pricingTotal.comprMin) / superficieCommerciale
-                        : Number.NaN
-                    const adjustedEurPerSqmMax =
-                      Number.isFinite(superficieCommerciale) && superficieCommerciale > 0 && pricingTotal?.comprMax
-                        ? Number(pricingTotal.comprMax) / superficieCommerciale
-                        : Number.NaN
+                  const baseEurPerSqm = pricing?.baseEurPerSqm && typeof pricing.baseEurPerSqm === "object" ? (pricing.baseEurPerSqm as any) : null
+                  const superficieCommercialeRaw = pricing?.superficieCommerciale
+                  const superficieCommerciale =
+                    typeof superficieCommercialeRaw === "string" || typeof superficieCommercialeRaw === "number"
+                      ? Number(superficieCommercialeRaw)
+                      : Number.NaN
 
-                    const min = typeof minRaw === "string" || typeof minRaw === "number" ? Number(minRaw) : Number.NaN
-                    const max = typeof maxRaw === "string" || typeof maxRaw === "number" ? Number(maxRaw) : Number.NaN
-                    const avg = typeof avgRaw === "string" || typeof avgRaw === "number" ? Number(avgRaw) : Number.NaN
+                  const adjustedEurPerSqmMin =
+                    Number.isFinite(superficieCommerciale) && superficieCommerciale > 0 && pricingTotal?.comprMin
+                      ? Number(pricingTotal.comprMin) / superficieCommerciale
+                      : Number.NaN
+                  const adjustedEurPerSqmMax =
+                    Number.isFinite(superficieCommerciale) && superficieCommerciale > 0 && pricingTotal?.comprMax
+                      ? Number(pricingTotal.comprMax) / superficieCommerciale
+                      : Number.NaN
 
-                    return (
-                      <details
-                        key={id ?? ts ?? `${idx}`}
-                        className="rounded-lg bg-white px-4 py-3 shadow-sm ring-1 ring-gray-100 transition-colors hover:bg-gray-50"
-                      >
-                        <summary className="cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
-                          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                            <div>
-                              <div className="text-sm font-semibold text-gray-900">
-                                {Number.isFinite(avg) ? eur.format(avg) : "—"}
-                              </div>
-                              <div className="text-xs text-gray-500">
-                                {Number.isFinite(min) ? eur.format(min) : "—"} - {Number.isFinite(max) ? eur.format(max) : "—"}
-                              </div>
-                              <div className="text-xs text-gray-500">{ts ?? ""}</div>
+                  const min = typeof minRaw === "string" || typeof minRaw === "number" ? Number(minRaw) : Number.NaN
+                  const max = typeof maxRaw === "string" || typeof maxRaw === "number" ? Number(maxRaw) : Number.NaN
+                  const avg = typeof avgRaw === "string" || typeof avgRaw === "number" ? Number(avgRaw) : Number.NaN
+
+                  return (
+                    <details key={id ?? ts ?? `${idx}`} className="rounded-lg border bg-card p-4 transition-colors">
+                      <summary className="cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                          <div>
+                            <div className="text-sm font-semibold">{Number.isFinite(avg) ? eur.format(avg) : "—"}</div>
+                            <div className="text-xs text-muted-foreground">
+                              {Number.isFinite(min) ? eur.format(min) : "—"} - {Number.isFinite(max) ? eur.format(max) : "—"}
                             </div>
-
-                            <div className="flex items-center gap-2">
-                              {id && (
-                                pdfByValuationId.has(id) ? (
-                                  <a
-                                    href={`/houses/${houseId}/pdf/${id}`}
-                                    className="rounded-md bg-gray-50 px-3 py-2 text-xs font-semibold text-gray-700 ring-1 ring-gray-100 hover:bg-gray-100"
-                                    target="_blank"
-                                    rel="noreferrer"
-                                  >
-                                    Show
-                                  </a>
-                                ) : (
-                                  <a
-                                    href={`/houses/${houseId}/pdf/${id}`}
-                                    className="rounded-md bg-gray-50 px-3 py-2 text-xs font-semibold text-gray-700 ring-1 ring-gray-100 hover:bg-gray-100"
-                                    target="_blank"
-                                    rel="noreferrer"
-                                  >
-                                    Print
-                                  </a>
-                                )
-                              )}
-                              {id && (
-                                <form action={deleteEvaluation.bind(null, id)}>
-                                  <button
-                                    type="submit"
-                                    className="rounded-md bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 ring-1 ring-red-100 hover:bg-red-100"
-                                  >
-                                    Delete
-                                  </button>
-                                </form>
-                              )}
-                            </div>
-                          </div>
-                        </summary>
-
-                        <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                          <div className="rounded-lg bg-gray-50 px-4 py-3 ring-1 ring-gray-100">
-                            <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">Result</div>
-                            <div className="mt-1 text-sm font-semibold text-gray-900">
-                              Min: {Number.isFinite(min) ? eur.format(min) : "—"}
-                            </div>
-                            <div className="mt-1 text-sm font-semibold text-gray-900">
-                              Max: {Number.isFinite(max) ? eur.format(max) : "—"}
-                            </div>
-                            <div className="mt-1 text-sm font-semibold text-gray-900">
-                              Avg: {Number.isFinite(avg) ? eur.format(avg) : "—"}
-                            </div>
+                            <div className="text-xs text-muted-foreground">{ts ?? ""}</div>
                           </div>
 
-                          <div className="rounded-lg bg-gray-50 px-4 py-3 ring-1 ring-gray-100">
-                            <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">Price per m²</div>
-                            <div className="mt-1 text-sm font-semibold text-gray-900">
-                              Base: {baseEurPerSqm?.comprMin ? `${eur.format(Number(baseEurPerSqm.comprMin))}/m²` : "—"} -{" "}
-                              {baseEurPerSqm?.comprMax ? `${eur.format(Number(baseEurPerSqm.comprMax))}/m²` : "—"}
-                            </div>
-                            <div className="mt-1 text-sm font-semibold text-gray-900">
-                              Adjusted: {Number.isFinite(adjustedEurPerSqmMin) ? `${eur.format(adjustedEurPerSqmMin)}/m²` : "—"} -{" "}
-                              {Number.isFinite(adjustedEurPerSqmMax) ? `${eur.format(adjustedEurPerSqmMax)}/m²` : "—"}
-                            </div>
+                          <div className="flex items-center gap-2">
+                            {id &&
+                              (pdfByValuationId.has(id) ? (
+                                <Button size="sm" variant="outline" className="text-xs h-8 gap-1.5" asChild>
+                                  <a href={`/houses/${houseId}/pdf/${id}`} target="_blank" rel="noreferrer">
+                                    <Eye className="h-3.5 w-3.5" /> View PDF
+                                  </a>
+                                </Button>
+                              ) : (
+                                <Button size="sm" variant="outline" className="text-xs h-8 gap-1.5" asChild>
+                                  <a href={`/houses/${houseId}/pdf/${id}`} target="_blank" rel="noreferrer">
+                                    <FileText className="h-3.5 w-3.5" /> Generate PDF
+                                  </a>
+                                </Button>
+                              ))}
+
+                            {id && (
+                              <form action={deleteEvaluation.bind(null, id)}>
+                                <button
+                                  type="submit"
+                                  className="inline-flex h-8 items-center justify-center rounded-md bg-destructive/10 px-3 text-xs font-semibold text-destructive ring-1 ring-destructive/20 hover:bg-destructive/15"
+                                >
+                                  Delete
+                                </button>
+                              </form>
+                            )}
                           </div>
                         </div>
+                      </summary>
 
-                        <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                          <div className="rounded-lg bg-gray-50 px-4 py-3 ring-1 ring-gray-100">
-                            <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">Configurations</div>
-                            <div className="mt-2 space-y-1">
-                              {configurationTitlesForEvaluation.length > 0 ? (
-                                configurationTitlesForEvaluation.map((title: string, idx: number) => {
-                                  const dbFixValue = evaluationDbFixValueByTitleLower.get(title.toLowerCase())
-                                  return (
-                                    <div key={`${title}-${idx}`} className="flex items-center justify-between gap-3">
-                                      <div className="min-w-0 truncate text-sm font-semibold text-gray-900">{title}</div>
-                                      <div className="shrink-0 text-sm font-semibold text-gray-700">
-                                        {dbFixValue !== null && dbFixValue !== undefined ? String(dbFixValue) : "—"}
-                                      </div>
-                                    </div>
-                                  )
-                                })
-                              ) : (
-                                <div className="text-sm text-gray-500">No configuration fix values.</div>
-                              )}
-                            </div>
+                      <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        <div className="rounded-lg bg-muted/20 px-4 py-3 ring-1 ring-border">
+                          <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Result</div>
+                          <div className="mt-1 text-sm font-semibold">Min: {Number.isFinite(min) ? eur.format(min) : "—"}</div>
+                          <div className="mt-1 text-sm font-semibold">Max: {Number.isFinite(max) ? eur.format(max) : "—"}</div>
+                          <div className="mt-1 text-sm font-semibold">Avg: {Number.isFinite(avg) ? eur.format(avg) : "—"}</div>
+                        </div>
+
+                        <div className="rounded-lg bg-muted/20 px-4 py-3 ring-1 ring-border">
+                          <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Price per m²</div>
+                          <div className="mt-1 text-sm font-semibold">
+                            Base: {baseEurPerSqm?.comprMin ? `${eur.format(Number(baseEurPerSqm.comprMin))}/m²` : "—"} -{" "}
+                            {baseEurPerSqm?.comprMax ? `${eur.format(Number(baseEurPerSqm.comprMax))}/m²` : "—"}
                           </div>
+                          <div className="mt-1 text-sm font-semibold">
+                            Adjusted: {Number.isFinite(adjustedEurPerSqmMin) ? `${eur.format(adjustedEurPerSqmMin)}/m²` : "—"} -{" "}
+                            {Number.isFinite(adjustedEurPerSqmMax) ? `${eur.format(adjustedEurPerSqmMax)}/m²` : "—"}
+                          </div>
+                        </div>
+                      </div>
 
-                          <div className="rounded-lg bg-gray-50 px-4 py-3 ring-1 ring-gray-100">
-                            <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">Adjustments</div>
-                            <div className="mt-2 space-y-1">
-                              {pricingAdjustments.length > 0 ? (
-                                pricingAdjustments.map((a: any, idx: number) => (
-                                  <div key={`${a?.title ?? "adj"}-${idx}`} className="flex items-center justify-between gap-3">
-                                    <div className="min-w-0 truncate text-sm font-semibold text-gray-900">
-                                      {typeof a?.title === "string" ? a.title : "—"}
-                                    </div>
-                                    <div className="shrink-0 text-sm font-semibold text-gray-700">
-                                      {typeof a?.fixValue === "string" || typeof a?.fixValue === "number" ? String(a.fixValue) : "—"}
+                      <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        <div className="rounded-lg bg-muted/20 px-4 py-3 ring-1 ring-border">
+                          <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Configurations</div>
+                          <div className="mt-2 space-y-1">
+                            {configurationTitlesForEvaluation.length > 0 ? (
+                              configurationTitlesForEvaluation.map((title: string, idx2: number) => {
+                                const dbFixValue = evaluationDbFixValueByTitleLower.get(title.toLowerCase())
+                                return (
+                                  <div key={`${title}-${idx2}`} className="flex items-center justify-between gap-3">
+                                    <div className="min-w-0 truncate text-sm font-semibold">{title}</div>
+                                    <div className="shrink-0 text-sm font-semibold text-muted-foreground">
+                                      {dbFixValue !== null && dbFixValue !== undefined ? String(dbFixValue) : "—"}
                                     </div>
                                   </div>
-                                ))
-                              ) : (
-                                <div className="text-sm text-gray-500">No adjustments.</div>
-                              )}
-                            </div>
+                                )
+                              })
+                            ) : (
+                              <div className="text-sm text-muted-foreground">No configuration fix values.</div>
+                            )}
                           </div>
                         </div>
 
-                        {inputConfigurations.length > 0 && (
-                          <div className="mt-3 rounded-lg bg-gray-50 px-4 py-3 ring-1 ring-gray-100">
-                            <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">Input configuration titles</div>
-                            <div className="mt-2 text-sm font-semibold text-gray-900">
-                              {inputConfigurations
-                                .filter((x) => typeof x === "string" && x.trim())
-                                .join(", ")}
-                            </div>
+                        <div className="rounded-lg bg-muted/20 px-4 py-3 ring-1 ring-border">
+                          <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Adjustments</div>
+                          <div className="mt-2 space-y-1">
+                            {pricingAdjustments.length > 0 ? (
+                              pricingAdjustments.map((a: any, idx2: number) => (
+                                <div key={`${a?.title ?? "adj"}-${idx2}`} className="flex items-center justify-between gap-3">
+                                  <div className="min-w-0 truncate text-sm font-semibold">
+                                    {typeof a?.title === "string" ? a.title : "—"}
+                                  </div>
+                                  <div className="shrink-0 text-sm font-semibold text-muted-foreground">
+                                    {typeof a?.fixValue === "string" || typeof a?.fixValue === "number" ? String(a.fixValue) : "—"}
+                                  </div>
+                                </div>
+                              ))
+                            ) : (
+                              <div className="text-sm text-muted-foreground">No adjustments.</div>
+                            )}
                           </div>
-                        )}
-                      </details>
-                    )
-                  })}
-                </div>
+                        </div>
+                      </div>
+
+                      {inputConfigurations.length > 0 && (
+                        <div className="mt-3 rounded-lg bg-muted/20 px-4 py-3 ring-1 ring-border">
+                          <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Input configuration titles</div>
+                          <div className="mt-2 text-sm font-semibold">
+                            {inputConfigurations.filter((x) => typeof x === "string" && x.trim()).join(", ")}
+                          </div>
+                        </div>
+                      )}
+                    </details>
+                  )
+                })}
               </div>
-            )}
-          </section>
-        )}
+            </div>
+          )}
+        </section>
+      )}
 
-        {configurationFixValues.length > 0 && (
-          <section className="mb-8 rounded-xl border border-gray-200 bg-white p-5">
-            <h2 className="text-lg font-bold text-gray-900">Price parameters</h2>
-            <p className="mt-1 text-sm text-gray-500">
-              These come from <span className="font-mono">aiCurrent.configurations</span> and are applied as multipliers during pricing.
-            </p>
+      {configurationFixValues.length > 0 && (
+        <section className="rounded-xl border border-border bg-card p-5">
+          <h2 className="text-base font-semibold">Price parameters</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            These come from <span className="font-mono">aiCurrent.configurations</span> and are applied as multipliers during pricing.
+          </p>
 
+          <div className="mt-4">
             <PriceParametersEditor
               formId="calculate-price-form"
               initialItems={configurationFixValues.map((c) => ({
@@ -890,134 +1038,82 @@ export default async function House({ params }: { params: Promise<{ id: string }
               }))}
               onRemove={removePriceParameter}
             />
-          </section>
-        )}
+          </div>
+        </section>
+      )}
+    </div>
+  )
 
-        {(houseParameterEntries.length > 0 || houseParametersByKey) && (
-          <section className="mb-8 rounded-xl border border-gray-200 bg-white p-5">
-            <h2 className="text-lg font-bold text-gray-900">House parameters</h2>
-            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <div className="sm:col-span-3">
-                <IndirizzoInlineEditor initialValue={indirizzoValue} onSave={saveIndirizzo} />
-              </div>
+  return (
+    <div className="p-4 lg:p-8 max-w-7xl mx-auto space-y-6">
+      {/* Breadcrumb */}
+      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+        <Link href="/houses" className="flex items-center gap-1 hover:text-foreground transition-colors">
+          <ArrowLeft className="h-4 w-4" /> Houses
+        </Link>
+        <span>/</span>
+        <span className="text-foreground font-medium truncate">{house.title}</span>
+      </div>
 
-              <div className="sm:col-span-3">
-                <form action={addHouseParameter} className="flex flex-col gap-2 sm:flex-row sm:items-end">
-                  <div className="flex-1">
-                    <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">Add house parameter</div>
-                    <input
-                      name="key"
-                      list="house-parameter-keys"
-                      placeholder="Search parameter…"
-                      className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-900"
-                    />
-                    <datalist id="house-parameter-keys">
-                      {houseParametersPropertyKeys.map((k) => (
-                        <option key={k} value={k} />
-                      ))}
-                    </datalist>
-                  </div>
-
-                  <div className="flex-1">
-                    <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">Value</div>
-                    <input
-                      name="value"
-                      placeholder="Value (type-aware)"
-                      className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-900"
-                    />
-                  </div>
-
-                  <button
-                    type="submit"
-                    className="rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800 transition-colors"
-                  >
-                    Add
-                  </button>
-                </form>
-              </div>
-
-              {houseParameterEntries.map((p) => (
-                <div key={p.key} className="rounded-lg bg-gray-50 px-4 py-3 ring-1 ring-gray-100">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">{p.key}</div>
-                      <div className="mt-1 text-sm font-semibold text-gray-900 break-words">
-                        {formatHouseParameterValue(p.value)}
-                      </div>
-                    </div>
-
-                    <form action={removeHouseParameter.bind(null, p.key)} className="shrink-0">
-                      <button
-                        type="submit"
-                        className="inline-flex h-9 w-9 items-center justify-center rounded-md bg-white text-gray-700 ring-1 ring-gray-200 hover:bg-gray-50"
-                        aria-label={`Remove ${p.key}`}
-                        title="Remove"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    </form>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
-
-        {/* User Information */}
-        <p className="text-lg text-gray-600 mb-4">
-          by <span className="font-medium text-gray-800">{house.user?.name || "Anonymous"}</span>
-        </p>
-
-        {/* Description Section */}
-        <div className="text-lg text-gray-800 leading-relaxed space-y-6 border-t pt-6">
+      {/* Title & Actions */}
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+        <div className="space-y-1.5">
           <InlineTextEditor
-            initialValue={house.description ?? ""}
-            placeholder="No description available for this house. Click to add one."
-            multiline
-            onSave={saveHouseDescription}
-            textClassName="whitespace-pre-wrap text-lg text-gray-800 leading-relaxed"
+            initialValue={house.title}
+            onSave={saveHouseTitle}
+            textClassName="text-2xl font-bold tracking-tight"
           />
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <MapPin className="h-4 w-4" />
+            <span className="truncate">{indirizzoValue || "—"}</span>
+          </div>
         </div>
 
-        <section className="mt-8 rounded-xl border border-gray-200 bg-white p-5">
-          <h2 className="text-lg font-bold text-gray-900">Locations</h2>
-          {coordinateLatLon ? (
-            <div className="mt-4 overflow-hidden rounded-lg ring-1 ring-gray-200">
-              <iframe
-                title="House location"
-                className="h-[320px] w-full"
-                loading="lazy"
-                referrerPolicy="no-referrer-when-downgrade"
-                src={(() => {
-                  const { lat, lon } = coordinateLatLon
-                  const delta = 0.0010
-                  const left = lon - delta
-                  const right = lon + delta
-                  const top = lat + delta
-                  const bottom = lat - delta
-                  const bbox = `${left}%2C${bottom}%2C${right}%2C${top}`
-                  const marker = `${lat}%2C${lon}`
-                  return `https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik&marker=${marker}`
-                })()}
-              />
-            </div>
-          ) : (
-            <p className="mt-2 text-sm text-gray-500">No valid coordinates available for this house.</p>
-          )}
-        </section>
-      </article>
+        <div className="flex flex-wrap items-center gap-2">
+          <form action={calculateGeom}>
+            <button
+              type="submit"
+              className="inline-flex h-9 items-center justify-center rounded-md border border-input bg-background px-3 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
+            >
+              <Calculator className="mr-2 h-4 w-4" />
+              Calculate geom
+            </button>
+          </form>
 
-      {/* Delete Button */}
-      <div className="mt-6 flex items-center gap-3">
-        <form action={deleteHouse}>
-          <button
-            type="submit"
-            className="px-6 py-3 bg-red-500 text-white font-semibold rounded-lg hover:bg-red-600 transition-colors"
-          >
-            Delete House
-          </button>
-        </form>
+          <form id="calculate-price-form" action={calculatePrice}>
+            <button
+              type="submit"
+              className="inline-flex h-9 items-center justify-center rounded-md border border-input bg-background px-3 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
+            >
+              <Calculator className="mr-2 h-4 w-4" />
+              Calculate price
+            </button>
+          </form>
+
+          <form action={regenerateAI}>
+            <button
+              type="submit"
+              className="inline-flex h-9 items-center justify-center rounded-md border border-input bg-background px-3 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
+            >
+              <Brain className="mr-2 h-4 w-4" />
+              Regenerate AI
+            </button>
+          </form>
+
+          <form action={deleteHouse}>
+            <button
+              type="submit"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-input bg-background text-destructive transition-colors hover:bg-accent hover:text-destructive"
+              aria-label="Delete house"
+              title="Delete house"
+            >
+              <Trash2 className="h-4 w-4" />
+            </button>
+          </form>
+        </div>
       </div>
+
+      <HouseDetailTabs overview={overviewNode} media={mediaNode} valuation={valuationNode} analytics={analyticsNode} />
     </div>
-  );
+  )
 }

@@ -2,42 +2,57 @@
 
 import Form from "next/form";
 import { createHouse } from "./actions";
+import Link from "next/link";
+import { ArrowLeft, Home } from "lucide-react";
+
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 
 export default function NewHouse() {
   return (
-    <div className="max-w-2xl mx-auto p-4">
-      <h1 className="text-2xl font-bold mb-6">Create New House</h1>
-      <Form action={createHouse} className="space-y-6">
-        <div>
-          <label htmlFor="title" className="flex text-lg font-medium mb-2 items-center">
-            Title 
-            <span className="ml-2 px-2 py-1 text-xs font-semibold text-white bg-gray-500 rounded-lg">
-              Required
-            </span>
-          </label>
-          <input
-            type="text"
-            id="title"
-            name="title"
-            required
-            placeholder="Enter house title ..."
-            className="w-full px-4 py-2 border rounded-lg"
-          />
-        </div>
-        <div>
-          <label htmlFor="description" className="block text-lg font-medium mb-2">Description</label>
-          <textarea
-            id="description"
-            name="description"
-            placeholder="Write house description here ..."
-            rows={6}
-            className="w-full px-4 py-2 border rounded-lg"
-          />
-        </div>
-        <button type="submit" className="w-full bg-blue-500 text-white py-3 rounded-lg hover:bg-blue-600">
-          Create House
-        </button>
-      </Form>
+    <div className="p-4 lg:p-8 max-w-2xl mx-auto space-y-6">
+      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+        <Link href="/houses" className="flex items-center gap-1 hover:text-foreground transition-colors">
+          <ArrowLeft className="h-4 w-4" /> Houses
+        </Link>
+        <span>/</span>
+        <span className="text-foreground font-medium">New</span>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-xl flex items-center gap-2">
+            <Home className="h-5 w-5 text-primary" />
+            Create new house
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Form action={createHouse} className="space-y-4">
+            <div className="space-y-2">
+              <label htmlFor="title" className="text-sm font-medium">
+                Title
+              </label>
+              <Input id="title" name="title" required placeholder="Enter house title..." />
+            </div>
+
+            <div className="space-y-2">
+              <label htmlFor="description" className="text-sm font-medium">
+                Description
+              </label>
+              <Textarea id="description" name="description" placeholder="Write a short description..." rows={6} />
+            </div>
+
+            <div className="flex items-center justify-end gap-2">
+              <Button asChild variant="outline">
+                <Link href="/houses">Cancel</Link>
+              </Button>
+              <Button type="submit">Create house</Button>
+            </div>
+          </Form>
+        </CardContent>
+      </Card>
     </div>
   );
 }

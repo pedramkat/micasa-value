@@ -64,21 +64,21 @@ export function PriceParametersEditor({ formId, initialItems, eligibleOptions, o
             window.setTimeout(() => setOpen(false), 120)
           }}
           placeholder="Search and add a configuration…"
-          className="w-full rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 ring-1 ring-gray-200"
+          className="w-full rounded-md bg-background px-3 py-2 text-sm font-semibold text-foreground ring-1 ring-border"
         />
 
         {open && filtered.length > 0 && (
-          <div className="absolute z-10 mt-2 w-full overflow-hidden rounded-md bg-white shadow-lg ring-1 ring-gray-200 text-gray-900">
+          <div className="absolute z-10 mt-2 w-full overflow-hidden rounded-md bg-popover shadow-lg ring-1 ring-border text-popover-foreground">
             {filtered.map((o) => (
               <button
                 key={o.title}
                 type="button"
-                className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm hover:bg-gray-50"
+                className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm hover:bg-muted"
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => addOption(o)}
               >
                 <span className="min-w-0 flex-1 truncate">{o.title}</span>
-                <span className="shrink-0 font-semibold text-gray-900">{o.fixValue ?? ""}</span>
+                <span className="shrink-0 font-semibold">{o.fixValue ?? ""}</span>
               </button>
             ))}
           </div>
@@ -88,9 +88,9 @@ export function PriceParametersEditor({ formId, initialItems, eligibleOptions, o
       {items.map((c, idx) => (
         <div
           key={c.title}
-          className="flex flex-col gap-2 rounded-lg bg-gray-50 px-4 py-3 ring-1 ring-gray-100 sm:flex-row sm:items-center sm:justify-between"
+          className="flex flex-col gap-2 rounded-lg bg-muted/50 px-4 py-3 ring-1 ring-border sm:flex-row sm:items-center sm:justify-between"
         >
-          <div className="text-sm font-semibold text-gray-900">{c.title}</div>
+          <div className="text-sm font-semibold text-foreground">{c.title}</div>
           <div className="flex items-center gap-2">
             <input type="hidden" name={`cfg_title_${idx}`} value={c.title} form={formId} />
             <input
@@ -102,7 +102,7 @@ export function PriceParametersEditor({ formId, initialItems, eligibleOptions, o
                 const v = e.target.value
                 setItems((prev) => prev.map((p, i) => (i === idx ? { ...p, value: v } : p)))
               }}
-              className="w-28 rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 ring-1 ring-gray-200"
+              className="w-28 rounded-md bg-background px-3 py-2 text-sm font-semibold text-foreground ring-1 ring-border"
             />
 
             <button
@@ -116,7 +116,7 @@ export function PriceParametersEditor({ formId, initialItems, eligibleOptions, o
                   await onRemove(title)
                 })
               }}
-              className="inline-flex h-9 w-9 items-center justify-center rounded-md bg-white text-gray-700 ring-1 ring-gray-200 hover:bg-gray-50 disabled:opacity-50"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-md bg-background text-muted-foreground ring-1 ring-border hover:bg-muted disabled:opacity-50"
             >
               <Trash2 className="h-4 w-4" />
             </button>

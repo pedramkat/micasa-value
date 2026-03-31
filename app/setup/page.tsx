@@ -1,19 +1,20 @@
 import SetupInstructions from "./setup-instructions";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 export default function SetupPage() {
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-8">
-      <div className="max-w-3xl w-full bg-white rounded-lg shadow-lg p-8">
-        <h1 className="text-3xl font-bold text-center mb-6 text-gray-900">
-          Welcome to Superblog
-        </h1>
-        <p className="text-gray-600 mb-8 text-center">
-          It looks like your database isn&apos;t set up yet. Follow the
-          instructions below to get started.
-        </p>
-
-        <SetupInstructions />
-      </div>
+    <div className="min-h-[calc(100svh-4rem)] flex items-center justify-center p-4">
+      <Card className="w-full max-w-3xl">
+        <CardHeader className="space-y-1">
+          <CardTitle className="text-xl">Welcome</CardTitle>
+          <p className="text-sm text-muted-foreground">
+            It looks like your database isn&apos;t set up yet. Follow the instructions below to get started.
+          </p>
+        </CardHeader>
+        <CardContent>
+          <SetupInstructions />
+        </CardContent>
+      </Card>
     </div>
   );
 }

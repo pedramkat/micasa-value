@@ -3,123 +3,113 @@
 import Form from "next/form";
 import { createConfiguration } from "./actions";
 import { useState } from "react";
+import Link from "next/link";
+import { ArrowLeft, Settings2 } from "lucide-react";
+
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 
 export default function NewConfiguration() {
   const [propertiesJson, setPropertiesJson] = useState("");
 
   return (
-    <div className="max-w-4xl mx-auto p-8">
-      <h1 className="text-3xl font-bold mb-6">Create New Configuration</h1>
-      <Form action={createConfiguration} className="space-y-6 bg-white p-8 rounded-lg shadow-md text-gray-900">
-        <div>
-          <label htmlFor="title" className="flex text-lg font-medium mb-2 items-center">
-            Title
-            <span className="ml-2 px-2 py-1 text-xs font-semibold text-white bg-gray-500 rounded-lg">
-              Required
-            </span>
-          </label>
-          <input
-            type="text"
-            id="title"
-            name="title"
-            required
-            placeholder="Enter configuration title..."
-            className="w-full px-4 py-2 border rounded-lg"
-          />
-        </div>
+    <div className="p-4 lg:p-8 max-w-4xl mx-auto space-y-6">
+      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+        <Link href="/configurations" className="flex items-center gap-1 hover:text-foreground transition-colors">
+          <ArrowLeft className="h-4 w-4" /> Configurations
+        </Link>
+        <span>/</span>
+        <span className="text-foreground font-medium">New</span>
+      </div>
 
-        <div>
-          <label htmlFor="description" className="block text-lg font-medium mb-2">
-            Description
-          </label>
-          <textarea
-            id="description"
-            name="description"
-            placeholder="Enter configuration description..."
-            rows={3}
-            className="w-full px-4 py-2 border rounded-lg"
-          />
-        </div>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-xl flex items-center gap-2">
+            <Settings2 className="h-5 w-5 text-primary" />
+            Create configuration
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Form action={createConfiguration} className="space-y-5">
+            <div className="space-y-2">
+              <label htmlFor="title" className="text-sm font-medium">
+                Title
+              </label>
+              <Input id="title" name="title" required placeholder="Enter configuration title..." />
+            </div>
 
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label htmlFor="fixValue" className="block text-lg font-medium mb-2">
-              Fix Value (%)
-            </label>
-            <input
-              type="number"
-              id="fixValue"
-              name="fixValue"
-              step="1"
-              placeholder="0.00"
-              className="w-full px-4 py-2 border rounded-lg"
-            />
-          </div>
+            <div className="space-y-2">
+              <label htmlFor="description" className="text-sm font-medium">
+                Description
+              </label>
+              <Textarea id="description" name="description" placeholder="Enter configuration description..." rows={3} />
+            </div>
 
-          <div>
-            <label htmlFor="variableValue" className="block text-lg font-medium mb-2">
-              Variable Value (%)
-            </label>
-            <input
-              type="number"
-              id="variableValue"
-              name="variableValue"
-              step="0.1"
-              placeholder="0.00"
-              className="w-full px-4 py-2 border rounded-lg"
-            />
-          </div>
-        </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <label htmlFor="fixValue" className="text-sm font-medium">
+                  Fix Value (%)
+                </label>
+                <Input type="number" id="fixValue" name="fixValue" step="1" placeholder="0" />
+              </div>
 
-        <div>
-          <label htmlFor="properties" className="block text-lg font-medium mb-2">
-            Properties (JSON)
-          </label>
-          <textarea
-            id="properties"
-            name="properties"
-            value={propertiesJson}
-            onChange={(e) => setPropertiesJson(e.target.value)}
-            placeholder='{"key": "value"}'
-            rows={6}
-            className="w-full px-4 py-2 border rounded-lg font-mono text-sm"
-          />
-          <p className="text-xs text-gray-500 mt-1">Enter valid JSON or leave empty</p>
-        </div>
+              <div className="space-y-2">
+                <label htmlFor="variableValue" className="text-sm font-medium">
+                  Variable Value (%)
+                </label>
+                <Input type="number" id="variableValue" name="variableValue" step="0.1" placeholder="0" />
+              </div>
+            </div>
 
-        <div className="flex space-x-6">
-          <div className="flex items-center">
-            <input
-              type="checkbox"
-              id="propertyValuation"
-              name="propertyValuation"
-              className="w-5 h-5 text-purple-600 rounded"
-            />
-            <label htmlFor="propertyValuation" className="ml-2 text-lg font-medium">
-              Property Valuation
-            </label>
-          </div>
+            <div className="space-y-2">
+              <label htmlFor="properties" className="text-sm font-medium">
+                Properties (JSON)
+              </label>
+              <Textarea
+                id="properties"
+                name="properties"
+                value={propertiesJson}
+                onChange={(e) => setPropertiesJson(e.target.value)}
+                placeholder='{"key": "value"}'
+                rows={8}
+                className="font-mono text-sm"
+              />
+              <p className="text-xs text-muted-foreground">Enter valid JSON or leave empty.</p>
+            </div>
 
-          <div className="flex items-center">
-            <input
-              type="checkbox"
-              id="houseValuation"
-              name="houseValuation"
-              className="w-5 h-5 text-purple-600 rounded"
-            />
-            <label htmlFor="houseValuation" className="ml-2 text-lg font-medium">
-              House Valuation
-            </label>
-          </div>
-        </div>
+            <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+              <label className="flex items-center gap-2 text-sm font-medium">
+                <input
+                  type="checkbox"
+                  id="propertyValuation"
+                  name="propertyValuation"
+                  className="h-4 w-4 rounded border-input"
+                />
+                Property Valuation
+              </label>
 
-        <button
-          type="submit"
-          className="w-full bg-purple-500 text-white py-3 rounded-lg hover:bg-purple-600 transition font-semibold"
-        >
-          Create Configuration
-        </button>
-      </Form>
+              <label className="flex items-center gap-2 text-sm font-medium">
+                <input
+                  type="checkbox"
+                  id="houseValuation"
+                  name="houseValuation"
+                  className="h-4 w-4 rounded border-input"
+                />
+                House Valuation
+              </label>
+            </div>
+
+            <div className="flex items-center justify-end gap-2">
+              <Button asChild variant="outline">
+                <Link href="/configurations">Cancel</Link>
+              </Button>
+              <Button type="submit">Create configuration</Button>
+            </div>
+          </Form>
+        </CardContent>
+      </Card>
     </div>
   );
 }

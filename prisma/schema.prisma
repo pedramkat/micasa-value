@@ -16,13 +16,18 @@ datasource db {
 }
 
 model User {
-  id         String    @id @default(cuid())
+  id         String   @id @default(cuid())
   name       String?
+  surname    String?
   email      String    @unique
   password   String
   telegramId String?   @unique
+  telephone  String?
+  address    String?
+  meta       Json?     @db.JsonB
   sessions   Session[]
-  houses     House[]
+  createdHouses House[] @relation("HouseCreator")
+  ownedHouses   House[] @relation("HouseOwner")
   role       Role      @default(AGENT)
 }
 
@@ -32,9 +37,10 @@ model House {
   description String?
   agencyId    String?
   agentId     String?
-  ownerId     String?
   userId      String?
-  user        User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user        User?    @relation("HouseCreator", fields: [userId], references: [id], onDelete: SetNull)
+  ownerId     String?
+  owner       User?    @relation("HouseOwner", fields: [ownerId], references: [id], onDelete: SetNull)
   coordinate  Json?    @db.JsonB
   botTexts    Json?    @db.JsonB
   valuation   Decimal? @db.Decimal(12, 2)
@@ -47,6 +53,7 @@ model House {
   updatedAt   DateTime @updatedAt
 
   @@index([userId])
+  @@index([ownerId])
 }
 
 model Session {
@@ -164,4 +171,5 @@ enum Role {
   ADMIN
   MANAGER
   AGENT
+  USER
 }

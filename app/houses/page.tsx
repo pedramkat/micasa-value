@@ -3,6 +3,10 @@
 import { useSearchParams } from "next/navigation";
 import { useEffect, useState, Suspense } from "react";
 import Link from "next/link";
+import { Building2, Loader2, Plus } from "lucide-react";
+
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 interface House {
   id: string;
@@ -49,45 +53,69 @@ function HousesList() {
   return (
     <>
       {isLoading ? (
-        <div className="flex items-center justify-center space-x-2 min-h-[200px]">
-          <div className="w-6 h-6 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-          <p className="text-gray-600">Loading...</p>
+        <div className="flex items-center justify-center gap-2 min-h-[220px] text-muted-foreground">
+          <Loader2 className="h-5 w-5 animate-spin" />
+          <span className="text-sm font-medium">Loading...</span>
         </div>
       ) : (
         <>
           {houses.length === 0 ? (
-            <p className="text-gray-600">No houses available.</p>
+            <Card>
+              <CardContent className="p-8 text-center">
+                <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-primary/10 text-primary">
+                  <Building2 className="h-5 w-5" />
+                </div>
+                <div className="text-base font-semibold">No houses available</div>
+                <div className="mt-1 text-sm text-muted-foreground">Create your first property to start a valuation.</div>
+                <div className="mt-5">
+                  <Button asChild className="gap-2">
+                    <Link href="/houses/new">
+                      <Plus className="h-4 w-4" />
+                      New house
+                    </Link>
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
           ) : (
-            <ul className="space-y-6 w-full max-w-4xl mx-auto">
+            <div className="grid gap-4">
               {houses.map((house) => (
-                <li key={house.id} className="border p-6 rounded-lg shadow-md bg-white">
-                  <Link href={`/houses/${house.id}`} className="text-2xl font-semibold text-gray-900 hover:underline">
-                    {house.title}
-                  </Link>
-                  <p className="text-sm text-gray-500">by {house.user?.name || "Anonymous"}</p>
-                  <p className="text-xs text-gray-400">
-                    {new Date(house.createdAt).toLocaleDateString("en-US", {
-                      year: "numeric",
-                      month: "long",
-                      day: "numeric",
-                    })}
-                  </p>
-                </li>
+                <Card key={house.id} className="hover:shadow-md transition-shadow">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base">
+                      <Link href={`/houses/${house.id}`} className="hover:underline">
+                        {house.title}
+                      </Link>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="pt-0">
+                    <div className="flex flex-col gap-1 text-sm">
+                      <div className="text-muted-foreground">by {house.user?.name || "Anonymous"}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {new Date(house.createdAt).toLocaleDateString("en-US", {
+                          year: "numeric",
+                          month: "long",
+                          day: "numeric",
+                        })}
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
               ))}
-            </ul>
+            </div>
           )}
 
           {/* Pagination Controls */}
-          <div className="flex justify-center space-x-4 mt-8">
+          <div className="flex justify-center gap-3 mt-8">
             {page > 1 && (
-              <Link href={`/houses?page=${page - 1}`}>
-                <button className="px-4 py-2 bg-gray-200 rounded-sm hover:bg-gray-300">Previous</button>
-              </Link>
+              <Button asChild variant="outline" size="sm">
+                <Link href={`/houses?page=${page - 1}`}>Previous</Link>
+              </Button>
             )}
             {page < totalPages && (
-              <Link href={`/houses?page=${page + 1}`}>
-                <button className="px-4 py-2 bg-gray-200 rounded-sm hover:bg-gray-300">Next</button>
-              </Link>
+              <Button asChild variant="outline" size="sm">
+                <Link href={`/houses?page=${page + 1}`}>Next</Link>
+              </Button>
             )}
           </div>
         </>
@@ -98,12 +126,25 @@ function HousesList() {
 
 export default function HousesPage() {
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-start p-8">
+    <div className="p-4 lg:p-8 max-w-5xl mx-auto space-y-6">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Houses</h1>
+          <p className="text-sm text-muted-foreground mt-1">Manage properties, media and valuations.</p>
+        </div>
+        <Button asChild className="gap-2">
+          <Link href="/houses/new">
+            <Plus className="h-4 w-4" />
+            New house
+          </Link>
+        </Button>
+      </div>
+
       <Suspense
         fallback={
-          <div className="flex items-center justify-center min-h-screen">
-            <div className="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-            <p className="ml-3 text-gray-600">Loading page...</p>
+          <div className="flex items-center justify-center min-h-[220px] gap-2 text-muted-foreground">
+            <Loader2 className="h-5 w-5 animate-spin" />
+            <span className="text-sm font-medium">Loading page...</span>
           </div>
         }
       >

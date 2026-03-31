@@ -1,7 +1,11 @@
 // app/layout.tsx
 import "./globals.css";
-import Header from "./Header";
+import { Inter } from "next/font/google";
 import Providers from "./providers";
+import { AppShell } from "@/components/app-shell";
+import { Toaster } from "@/components/ui/sonner";
+
+const inter = Inter({ subsets: ["latin"], display: "swap" })
 
 export const metadata = {
   title: "Superblog",
@@ -14,13 +18,13 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
-      <body>
+    <html lang="en" className="light" suppressHydrationWarning>
+      <body className={inter.className}>
         <Providers>
-          <div className="min-h-screen flex flex-col">
-            <Header />
-            <main className="flex-1">{children}</main>
-          </div>
+          <AppShell>
+            {children}
+          </AppShell>
+          <Toaster />
         </Providers>
       </body>
     </html>

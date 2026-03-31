@@ -2,7 +2,8 @@
 
 import { useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
-import { Trash2 } from "lucide-react"
+import type { MediaPhoto } from "@/components/media/MediaPreviewDialog"
+import { MediaManager } from "@/components/media/MediaManager"
 
 export type HousePhotoItem = {
   path: string
@@ -15,6 +16,15 @@ function toMediaUrl(storedPath: string): string {
   const idx = normalized.indexOf(prefix)
   const rel = idx >= 0 ? normalized.slice(idx + prefix.length) : normalized
   return `/media/${rel}`
+}
+
+function normalizePhotoKey(storedPath: string): string {
+  const normalized = storedPath.replace(/\\/g, "/")
+  const base = normalized.split("/").pop() || normalized
+  return base
+    .toLowerCase()
+    .replace(/^enhanced[_-]?/, "")
+    .replace(/^enh[_-]?/, "")
 }
 
 export function HouseMediaEnhancePanel({
@@ -44,8 +54,22 @@ export function HouseMediaEnhancePanel({
     })
   }, [enhancedPhotos])
 
-  const [selected, setSelected] = useState<Set<string>>(() => new Set())
-  const [activeUrl, setActiveUrl] = useState<string | null>(null)
+  const originalByKey = useMemo(() => {
+    const map = new Map<string, HousePhotoItem>()
+    for (const p of sorted) {
+      map.set(normalizePhotoKey(p.path), p)
+    }
+    return map
+  }, [sorted])
+
+  const enhancedByKey = useMemo(() => {
+    const map = new Map<string, HousePhotoItem>()
+    for (const p of sortedEnhanced) {
+      map.set(normalizePhotoKey(p.path), p)
+    }
+    return map
+  }, [sortedEnhanced])
+
   const [isEnhancing, setIsEnhancing] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -64,23 +88,16 @@ export function HouseMediaEnhancePanel({
         const text = await res.text().catch(() => "")
         throw new Error(text || `Request failed with status ${res.status}`)
       }
-
-      setSelected((prev) => {
-        const next = new Set(prev)
-        next.delete(targetPath)
-        return next
-      })
-
       router.refresh()
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to delete image")
+      const message = e instanceof Error ? e.message : "Failed to delete image"
+      setError(message)
+      throw new Error(message)
     }
   }
 
-  async function enhanceSelected() {
-    const paths = Array.from(selected)
+  async function enhancePaths(paths: string[]) {
     if (paths.length === 0 || isEnhancing) return
-
     setIsEnhancing(true)
     setError(null)
 
@@ -95,158 +112,80 @@ export function HouseMediaEnhancePanel({
         const text = await res.text().catch(() => "")
         throw new Error(text || `Request failed with status ${res.status}`)
       }
-
-      setSelected(new Set())
       router.refresh()
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to enhance images")
+      const message = e instanceof Error ? e.message : "Failed to enhance images"
+      setError(message)
+      throw new Error(message)
     } finally {
       setIsEnhancing(false)
     }
   }
 
+  const uiOriginals = useMemo<MediaPhoto[]>(
+    () =>
+      sorted.map((p) => ({
+        id: p.path,
+        path: p.path,
+        url: toMediaUrl(p.path),
+        createdAt: p.createdAt,
+      })),
+    [sorted],
+  )
+
+  const uiEnhanced = useMemo<MediaPhoto[]>(
+    () =>
+      sortedEnhanced.map((p) => ({
+        id: p.path,
+        path: p.path,
+        url: toMediaUrl(p.path),
+        createdAt: p.createdAt,
+      })),
+    [sortedEnhanced],
+  )
+
+  const getEnhancedForPreview = useMemo(() => {
+    return (photo: MediaPhoto): MediaPhoto | null => {
+      const key = normalizePhotoKey(photo.path)
+
+      const enhancedItem = enhancedByKey.get(key)
+      if (enhancedItem) {
+        return {
+          id: enhancedItem.path,
+          path: enhancedItem.path,
+          url: toMediaUrl(enhancedItem.path),
+          createdAt: enhancedItem.createdAt,
+        }
+      }
+
+      const originalIdx = sorted.findIndex((p) => p.path === photo.path)
+      const fallback = originalIdx >= 0 && sortedEnhanced[originalIdx] ? sortedEnhanced[originalIdx] : null
+      if (!fallback) return null
+
+      return {
+        id: fallback.path,
+        path: fallback.path,
+        url: toMediaUrl(fallback.path),
+        createdAt: fallback.createdAt,
+      }
+    }
+  }, [enhancedByKey, sorted, sortedEnhanced])
+
   return (
     <section className="mb-10">
-      <div className="flex items-baseline justify-between gap-4">
-        <h2 className="text-xl font-semibold text-gray-900">Photos</h2>
-        <div className="text-sm text-gray-500">{sorted.length}</div>
-      </div>
-
-      {sorted.length > 0 && (
-        <div className="mt-4 flex items-center justify-between gap-4">
-          <div className="text-sm text-gray-600">Selected: {selected.size}</div>
-          <button
-            type="button"
-            onClick={enhanceSelected}
-            disabled={selected.size === 0 || isEnhancing}
-            className="rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {isEnhancing ? "Enhancing..." : "Enhance images"}
-          </button>
-        </div>
-      )}
-
       {error && <div className="mt-3 text-sm font-semibold text-red-600">{error}</div>}
 
-      <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
-        {sorted.map((p) => {
-          const url = toMediaUrl(p.path)
-          const checked = selected.has(p.path)
-
-          return (
-            <div
-              key={p.path}
-              className="group relative aspect-square overflow-hidden rounded-xl bg-gray-100 ring-1 ring-gray-200"
-            >
-              <button type="button" onClick={() => setActiveUrl(url)} className="absolute inset-0">
-                <img
-                  src={url}
-                  alt="House photo"
-                  className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.02]"
-                  loading="lazy"
-                />
-              </button>
-
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.preventDefault()
-                  e.stopPropagation()
-                  void deleteImage(p.path)
-                }}
-                className="absolute right-2 top-2 z-10 inline-flex h-9 w-9 items-center justify-center rounded-md bg-white/90 text-gray-800 ring-1 ring-gray-200 hover:bg-white"
-                aria-label="Delete"
-                title="Delete"
-              >
-                <Trash2 className="h-4 w-4" />
-              </button>
-
-              <label className="absolute left-2 top-2 z-10 flex items-center gap-2 rounded-lg bg-black/50 px-2 py-1 text-xs font-semibold text-white ring-1 ring-white/20">
-                <input
-                  type="checkbox"
-                  checked={checked}
-                  onChange={() => {
-                    setSelected((prev) => {
-                      const next = new Set(prev)
-                      if (next.has(p.path)) next.delete(p.path)
-                      else next.add(p.path)
-                      return next
-                    })
-                  }}
-                  className="h-4 w-4"
-                />
-                Select
-              </label>
-            </div>
-          )
-        })}
-      </div>
-
-      {activeUrl && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-6"
-          role="dialog"
-          aria-modal="true"
-          onClick={() => setActiveUrl(null)}
-        >
-          <div className="relative max-h-[90vh] w-full max-w-5xl" onClick={(e) => e.stopPropagation()}>
-            <button
-              type="button"
-              onClick={() => setActiveUrl(null)}
-              className="absolute -top-10 right-0 rounded-lg bg-white/10 px-3 py-2 text-sm font-semibold text-white ring-1 ring-white/20 hover:bg-white/20"
-            >
-              Close
-            </button>
-            <div className="overflow-hidden rounded-2xl bg-black ring-1 ring-white/10">
-              <img src={activeUrl} alt="House photo" className="max-h-[90vh] w-full object-contain" />
-            </div>
-          </div>
-        </div>
-      )}
-
-      {sortedEnhanced.length > 0 && (
-        <section className="mt-10">
-          <div className="flex items-baseline justify-between gap-4">
-            <h2 className="text-xl font-semibold text-gray-900">Enhanced photos</h2>
-            <div className="text-sm text-gray-500">{sortedEnhanced.length}</div>
-          </div>
-
-          <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
-            {sortedEnhanced.map((p) => {
-              const url = toMediaUrl(p.path)
-              return (
-                <div
-                  key={p.path}
-                  className="group relative aspect-square overflow-hidden rounded-xl bg-gray-100 ring-1 ring-gray-200"
-                >
-                  <button type="button" onClick={() => setActiveUrl(url)} className="absolute inset-0">
-                    <img
-                      src={url}
-                      alt="Enhanced photo"
-                      className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.02]"
-                      loading="lazy"
-                    />
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.preventDefault()
-                      e.stopPropagation()
-                      void deleteImage(p.path)
-                    }}
-                    className="absolute right-2 top-2 z-10 inline-flex h-9 w-9 items-center justify-center rounded-md bg-white/90 text-gray-800 ring-1 ring-gray-200 hover:bg-white"
-                    aria-label="Delete"
-                    title="Delete"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                </div>
-              )
-            })}
-          </div>
-        </section>
-      )}
+      <MediaManager
+        photos={uiOriginals}
+        enhancedPhotos={uiEnhanced}
+        getEnhancedForPreview={getEnhancedForPreview}
+        onEnhanceSelected={async (selectedPhotos) => {
+          await enhancePaths(selectedPhotos.map((p) => p.path))
+        }}
+        onDelete={async (photo) => {
+          await deleteImage(photo.path)
+        }}
+      />
     </section>
   )
 }

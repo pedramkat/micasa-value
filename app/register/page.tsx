@@ -4,14 +4,22 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { signIn } from "next-auth/react";
+import { Loader2, UserPlus } from "lucide-react";
+
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 
 export default function RegisterPage() {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     try {
       event.preventDefault();
+      if (isLoading) return
+      setIsLoading(true)
       const formData = new FormData(event.currentTarget);
       const signInResult = await signIn("credentials", {
         ...Object.fromEntries(formData),
@@ -20,6 +28,7 @@ export default function RegisterPage() {
 
       if (signInResult?.error) {
         setError("Failed to sign in after registration");
+        setIsLoading(false)
         return;
       }
 
@@ -27,79 +36,57 @@ export default function RegisterPage() {
       router.refresh();
     } catch (error) {
       setError(error instanceof Error ? error.message : "Registration failed");
+      setIsLoading(false)
     }
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8">
-        <div>
-          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
-            Create your account
-          </h2>
-        </div>
-        <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
-          <div className="rounded-md shadow-xs -space-y-px">
-            <div>
-              <label htmlFor="name" className="sr-only">
+    <div className="min-h-[calc(100svh-4rem)] flex items-center justify-center p-4">
+      <Card className="w-full max-w-md">
+        <CardHeader className="space-y-1">
+          <CardTitle className="text-xl">Create account</CardTitle>
+          <p className="text-sm text-muted-foreground">Create your profile to start using the dashboard.</p>
+        </CardHeader>
+        <CardContent>
+          <form className="space-y-4" onSubmit={handleSubmit}>
+            <div className="space-y-2">
+              <label htmlFor="name" className="text-sm font-medium">
                 Name
               </label>
-              <input
-                id="name"
-                name="name"
-                type="text"
-                required
-                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-t-md focus:outline-hidden focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm"
-                placeholder="Full name"
-              />
+              <Input id="name" name="name" type="text" required placeholder="Full name" />
             </div>
-            <div>
-              <label htmlFor="email" className="sr-only">
-                Email address
+
+            <div className="space-y-2">
+              <label htmlFor="email" className="text-sm font-medium">
+                Email
               </label>
-              <input
-                id="email"
-                name="email"
-                type="email"
-                required
-                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-hidden focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm"
-                placeholder="Email address"
-              />
+              <Input id="email" name="email" type="email" required placeholder="name@company.com" />
             </div>
-            <div>
-              <label htmlFor="password" className="sr-only">
+
+            <div className="space-y-2">
+              <label htmlFor="password" className="text-sm font-medium">
                 Password
               </label>
-              <input
-                id="password"
-                name="password"
-                type="password"
-                required
-                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-b-md focus:outline-hidden focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm"
-                placeholder="Password"
-              />
+              <Input id="password" name="password" type="password" required placeholder="••••••••" />
             </div>
-          </div>
 
-          {error && (
-            <div className="text-red-500 text-sm text-center">{error}</div>
-          )}
+            {error && <div className="text-sm text-destructive">{error}</div>}
 
-          <div>
-            <button
-              type="submit"
-              className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-hidden focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-            >
+            <Button type="submit" className="w-full gap-2" disabled={isLoading}>
+              {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />}
               Register
-            </button>
-          </div>
-        </form>
-        <div className="text-center">
-          <Link href="/login" className="text-blue-600 hover:underline">
-            Already have an account? Sign in
-          </Link>
-        </div>
-      </div>
+            </Button>
+
+            <div className="text-sm text-muted-foreground">
+              Already have an account?{" "}
+              <Link href="/login" className="text-primary hover:underline">
+                Sign in
+              </Link>
+              .
+            </div>
+          </form>
+        </CardContent>
+      </Card>
     </div>
   );
 }

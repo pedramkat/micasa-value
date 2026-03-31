@@ -31,8 +31,8 @@ export function HouseMediaGallery({ photos }: { photos: HousePhotoItem[] }) {
   return (
     <section className="mb-10">
       <div className="flex items-baseline justify-between gap-4">
-        <h2 className="text-xl font-semibold text-gray-900">Photos</h2>
-        <div className="text-sm text-gray-500">{sorted.length}</div>
+        <h2 className="text-xl font-semibold text-foreground">Photos</h2>
+        <div className="text-sm text-muted-foreground">{sorted.length}</div>
       </div>
 
       <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
@@ -43,7 +43,7 @@ export function HouseMediaGallery({ photos }: { photos: HousePhotoItem[] }) {
               key={p.path}
               type="button"
               onClick={() => setActiveUrl(url)}
-              className="group relative aspect-square overflow-hidden rounded-xl bg-gray-100 ring-1 ring-gray-200"
+              className="group relative aspect-square overflow-hidden rounded-xl bg-muted ring-1 ring-border"
             >
               <img
                 src={url}
@@ -67,7 +67,7 @@ export function HouseMediaGallery({ photos }: { photos: HousePhotoItem[] }) {
             <button
               type="button"
               onClick={() => setActiveUrl(null)}
-              className="absolute -top-10 right-0 rounded-lg bg-white/10 px-3 py-2 text-sm font-semibold text-white ring-1 ring-white/20 hover:bg-white/20"
+              className="absolute -top-10 right-0 rounded-lg bg-background/10 px-3 py-2 text-sm font-semibold text-foreground ring-1 ring-border/20 hover:bg-background/20"
             >
               Close
             </button>
