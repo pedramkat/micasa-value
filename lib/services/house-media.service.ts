@@ -1,8 +1,8 @@
 import path from "node:path"
 import fs from "node:fs/promises"
-import { randomUUID } from "node:crypto"
 import sharp from "sharp"
 import OpenAI, { toFile } from "openai"
+import { costTrackerService } from "@/lib/services/cost-tracker.service"
 
 export type StoredMediaItem = {
   path: string
@@ -37,6 +37,7 @@ export type EnhanceImageInput = {
   houseId: string
   originalPath: string
   createdAt?: Date
+  track?: { userId?: string | null; operation?: string }
 }
 
 export type EnhanceImageResult = {
@@ -53,7 +54,11 @@ class HouseMediaService {
     return path.join(process.cwd(), "storage", "enhanced_media")
   }
 
-  private async enhanceWithOpenAI(imageBuffer: Buffer, mimeType: string): Promise<{ buffer: Buffer; model: string }> {
+  private async enhanceWithOpenAI(
+    imageBuffer: Buffer,
+    mimeType: string,
+    track?: { userId?: string | null; houseId?: string; operation?: string },
+  ): Promise<{ buffer: Buffer; model: string }> {
     const apiKey = process.env.OPENAI_API_KEY
     if (!apiKey) {
       throw new Error("OPENAI_API_KEY is not set")
@@ -69,6 +74,7 @@ Enhancement rules:
 - Increase sharpness and reduce noise
 - Use natural-looking contrast (avoid HDR effect)
 - Prefer natural light; balance shadows and highlights
+- IMPORTANT: Do not change the original image resolution, pixel dimensions, or aspect ratio. Output must match the input image size.
 
 Photography style:
 - Simulate Canon EOS 7D quality
@@ -97,6 +103,27 @@ Return only the enhanced image.`
       image: [imageFile],
       prompt
     })
+
+    const userId = track?.userId
+    if (userId) {
+      const perImageCostUsd = (() => {
+        const raw = process.env.OPENAI_IMAGE_EDIT_COST_USD
+        if (typeof raw !== "string" || !raw.trim()) return 0
+        const n = Number(raw)
+        return Number.isFinite(n) ? n : 0
+      })()
+      await costTrackerService.trackCost({
+        userId,
+        houseId: track?.houseId ?? null,
+        provider: "openai",
+        category: "image",
+        operation: track?.operation ?? "image_enhance",
+        endpoint: "images.edit",
+        costUsd: perImageCostUsd,
+        unitsUsed: 1,
+        metadata: { model, perImageCostUsd },
+      })
+    }
 
     const b64Out = typeof (rsp as any)?.data?.[0]?.b64_json === "string" ? (rsp as any).data[0].b64_json : null
     if (!b64Out) {
@@ -145,9 +172,11 @@ Return only the enhanced image.`
 
   async enhanceImage(input: EnhanceImageInput): Promise<EnhanceImageResult> {
     const createdAt = input.createdAt ?? new Date()
-    const yyyy = String(createdAt.getUTCFullYear())
-    const mm = String(createdAt.getUTCMonth() + 1).padStart(2, "0")
-    const dd = String(createdAt.getUTCDate()).padStart(2, "0")
+
+    const normalizedOriginalPath = input.originalPath.replace(/\\/g, "/")
+    if (!normalizedOriginalPath.startsWith(`storage/media/${input.houseId}/`)) {
+      throw new Error("originalPath must be under storage/media/<houseId>")
+    }
 
     const originalAbsolutePath = path.join(process.cwd(), input.originalPath)
     const originalExt = path.extname(originalAbsolutePath).toLowerCase()
@@ -161,24 +190,36 @@ Return only the enhanced image.`
             : "image/jpeg"
 
     const originalBuffer = await fs.readFile(originalAbsolutePath)
-    const enhanced = await this.enhanceWithOpenAI(originalBuffer, mimeType)
+    const originalMeta = await sharp(originalBuffer)
+      .rotate()
+      .metadata()
+      .catch(() => null)
 
-    const baseName = path.basename(originalAbsolutePath, originalExt).replace(/[^a-zA-Z0-9_-]/g, "_") || "photo"
-    const outKey = randomUUID()
-    const relativePath = path.join(
-      "storage",
-      "enhanced_media",
-      input.houseId,
-      "openai",
-      yyyy,
-      mm,
-      dd,
-      `enhanced_${baseName}_${outKey}.png`,
-    )
+    const enhanced = await this.enhanceWithOpenAI(originalBuffer, mimeType, {
+      userId: input.track?.userId ?? null,
+      houseId: input.houseId,
+      operation: input.track?.operation ?? "image_enhance",
+    })
+
+    const normalizedEnhancedBuffer =
+      originalMeta?.width && originalMeta?.height
+        ? await sharp(enhanced.buffer)
+            .rotate()
+            .resize(originalMeta.width, originalMeta.height, { fit: "fill" })
+            .png()
+            .toBuffer()
+        : enhanced.buffer
+
+    const originalRelToHouse = normalizedOriginalPath.slice(`storage/media/${input.houseId}/`.length)
+    const originalDirRel = path.posix.dirname(originalRelToHouse)
+    const originalBase = path.posix.basename(originalRelToHouse, path.posix.extname(originalRelToHouse))
+
+    const enhancedRelToHouse = path.posix.join(originalDirRel, `${originalBase}.png`)
+    const relativePath = path.join("storage", "enhanced_media", input.houseId, enhancedRelToHouse)
 
     const absolutePath = path.join(process.cwd(), relativePath)
     await fs.mkdir(path.dirname(absolutePath), { recursive: true })
-    await fs.writeFile(absolutePath, enhanced.buffer)
+    await fs.writeFile(absolutePath, normalizedEnhancedBuffer)
 
     const stored: StoredMediaItem = {
       path: relativePath,

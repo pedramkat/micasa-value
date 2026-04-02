@@ -1,9 +1,10 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useSession } from "next-auth/react"
+import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { useTheme } from "next-themes"
-import { Bell, Globe, Palette, Save, Shield, User } from "lucide-react"
+import { Bell, Globe, Palette, Save, Shield, User, DollarSign } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -14,6 +15,7 @@ import { Switch } from "@/components/ui/switch"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { toast } from "sonner"
 
 function initialsFromUser(name?: string | null, email?: string | null) {
@@ -32,7 +34,12 @@ function initialsFromUser(name?: string | null, email?: string | null) {
 
 export default function SettingsPage() {
   const { data: session } = useSession()
+  const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
   const { theme, setTheme } = useTheme()
+
+  const activeTab = searchParams.get("tab") ?? "profile"
 
   const initials = useMemo(
     () => initialsFromUser(session?.user?.name ?? null, session?.user?.email ?? null),
@@ -54,12 +61,91 @@ export default function SettingsPage() {
     weeklyReport: false,
   })
 
+  const [costProvider, setCostProvider] = useState<string>("all")
+  const [costCategory, setCostCategory] = useState<string>("all")
+  const [costFrom, setCostFrom] = useState<string>("")
+  const [costTo, setCostTo] = useState<string>("")
+  const [costRows, setCostRows] = useState<
+    Array<{
+      id: string
+      createdAt: string
+      houseId: string | null
+      provider: string
+      category: string
+      operation: string
+      endpoint: string
+      costUsd: number
+    }>
+  >([])
+  const [costTotals, setCostTotals] = useState<Record<string, number>>({})
+  const [costByCategory, setCostByCategory] = useState<Record<string, number>>({})
+  const [costLoading, setCostLoading] = useState(false)
+
+  useEffect(() => {
+    let canceled = false
+
+    async function loadCosts() {
+      setCostLoading(true)
+      try {
+        const url = new URL("/api/settings/costs", window.location.origin)
+        if (costProvider !== "all") url.searchParams.set("provider", costProvider)
+        if (costCategory !== "all") url.searchParams.set("category", costCategory)
+        if (costFrom) url.searchParams.set("from", costFrom)
+        if (costTo) url.searchParams.set("to", costTo)
+        url.searchParams.set("limit", "200")
+
+        const res = await fetch(url.toString(), { cache: "no-store" })
+        if (!res.ok) {
+          throw new Error(`Failed fetching costs (${res.status})`)
+        }
+        const data = (await res.json()) as {
+          totals?: Record<string, number>
+          by_category?: Record<string, number>
+          by_operation?: Record<string, number>
+          rows?: Array<any>
+        }
+
+        if (canceled) return
+        setCostTotals(data.totals ?? {})
+        setCostByCategory(data.by_category ?? {})
+        setCostRows(
+          Array.isArray(data.rows)
+            ? data.rows.map((r) => ({
+                id: String(r.id),
+                createdAt: typeof r.createdAt === "string" ? r.createdAt : new Date(r.createdAt).toISOString(),
+                houseId: r.houseId ? String(r.houseId) : null,
+                provider: String(r.provider),
+                category: String(r.category),
+                operation: String(r.operation ?? "unknown"),
+                endpoint: String(r.endpoint),
+                costUsd: typeof r.costUsd === "number" ? r.costUsd : Number(r.costUsd ?? 0),
+              }))
+            : [],
+        )
+      } catch (e: any) {
+        if (!canceled) {
+          toast.error(e?.message ?? "Failed fetching costs")
+          setCostRows([])
+          setCostTotals({})
+          setCostByCategory({})
+        }
+      } finally {
+        if (!canceled) setCostLoading(false)
+      }
+    }
+
+    loadCosts()
+    return () => {
+      canceled = true
+    }
+  }, [costProvider, costCategory, costFrom, costTo])
+
   const handleSave = () => {
     toast.success("Settings saved")
   }
 
   return (
-    <div className="p-4 lg:p-6 space-y-6 max-w-4xl">
+    <div className="p-4 lg:p-8 max-w-5xl mx-auto space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Settings</h1>
@@ -72,7 +158,15 @@ export default function SettingsPage() {
         </Button>
       </div>
 
-      <Tabs defaultValue="profile" className="space-y-6">
+      <Tabs
+        value={activeTab}
+        onValueChange={(v) => {
+          const next = new URLSearchParams(searchParams.toString())
+          next.set("tab", v)
+          router.replace(`${pathname}?${next.toString()}`, { scroll: false })
+        }}
+        className="space-y-6"
+      >
         <TabsList className="bg-muted/50">
           <TabsTrigger value="profile" className="gap-2">
             <User className="h-4 w-4" />
@@ -85,6 +179,10 @@ export default function SettingsPage() {
           <TabsTrigger value="general" className="gap-2">
             <Globe className="h-4 w-4" />
             General
+          </TabsTrigger>
+          <TabsTrigger value="api-costs" className="gap-2">
+            <DollarSign className="h-4 w-4" />
+            API Costs
           </TabsTrigger>
         </TabsList>
 
@@ -301,6 +399,124 @@ export default function SettingsPage() {
                 <Label htmlFor="telegram-token">Telegram Bot Token</Label>
                 <Input id="telegram-token" type="password" placeholder="••••••••:•••••••••••••••••••" />
                 <p className="text-xs text-muted-foreground">Used to sync photos and notes from Telegram.</p>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="api-costs" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">API Costs</CardTitle>
+              <CardDescription>Track per-user costs for OpenAI and Google Places.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Card className="border-dashed">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm text-muted-foreground">Total OpenAI</CardTitle>
+                  </CardHeader>
+                  <CardContent className="pt-0">
+                    <div className="text-2xl font-bold">${(costTotals.openai ?? 0).toFixed(6)}</div>
+                  </CardContent>
+                </Card>
+                <Card className="border-dashed">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm text-muted-foreground">Total Google</CardTitle>
+                  </CardHeader>
+                  <CardContent className="pt-0">
+                    <div className="text-2xl font-bold">${(costTotals.google ?? 0).toFixed(6)}</div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-4">
+                <div className="space-y-2">
+                  <Label>Provider</Label>
+                  <Select value={costProvider} onValueChange={setCostProvider}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All</SelectItem>
+                      <SelectItem value="openai">OpenAI</SelectItem>
+                      <SelectItem value="google">Google</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Category</Label>
+                  <Select value={costCategory} onValueChange={setCostCategory}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All</SelectItem>
+                      <SelectItem value="text">Text</SelectItem>
+                      <SelectItem value="image">Image</SelectItem>
+                      <SelectItem value="voice">Voice</SelectItem>
+                      <SelectItem value="places">Places</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>From</Label>
+                  <Input type="date" value={costFrom} onChange={(e) => setCostFrom(e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <Label>To</Label>
+                  <Input type="date" value={costTo} onChange={(e) => setCostTo(e.target.value)} />
+                </div>
+              </div>
+
+              <div className="rounded-lg border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Date</TableHead>
+                      <TableHead>House</TableHead>
+                      <TableHead>Provider</TableHead>
+                      <TableHead>Category</TableHead>
+                      <TableHead>Operation</TableHead>
+                      <TableHead>Endpoint</TableHead>
+                      <TableHead className="text-right">Cost (USD)</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {costLoading ? (
+                      <TableRow>
+                        <TableCell colSpan={7} className="text-sm text-muted-foreground">
+                          Loading...
+                        </TableCell>
+                      </TableRow>
+                    ) : costRows.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={7} className="text-sm text-muted-foreground">
+                          No cost records yet.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      costRows.map((row) => (
+                        <TableRow key={row.id}>
+                          <TableCell>{new Date(row.createdAt).toLocaleString("en-GB")}</TableCell>
+                          <TableCell className="font-mono text-xs">{row.houseId ?? "—"}</TableCell>
+                          <TableCell className="capitalize">{row.provider}</TableCell>
+                          <TableCell className="capitalize">{row.category}</TableCell>
+                          <TableCell className="font-mono text-xs">{row.operation}</TableCell>
+                          <TableCell className="font-mono text-xs">{row.endpoint}</TableCell>
+                          <TableCell className="text-right">{row.costUsd.toFixed(6)}</TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+
+              <div className="text-xs text-muted-foreground">
+                Totals by category: {Object.entries(costByCategory)
+                  .sort(([a], [b]) => a.localeCompare(b))
+                  .map(([k, v]) => `${k}: $${Number(v ?? 0).toFixed(4)}`)
+                  .join(" | ")}
               </div>
             </CardContent>
           </Card>

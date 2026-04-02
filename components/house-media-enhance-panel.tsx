@@ -21,7 +21,8 @@ function toMediaUrl(storedPath: string): string {
 function normalizePhotoKey(storedPath: string): string {
   const normalized = storedPath.replace(/\\/g, "/")
   const base = normalized.split("/").pop() || normalized
-  return base
+  const baseNoExt = base.replace(/\.[a-z0-9]+$/i, "")
+  return baseNoExt
     .toLowerCase()
     .replace(/^enhanced[_-]?/, "")
     .replace(/^enh[_-]?/, "")
@@ -65,6 +66,11 @@ export function HouseMediaEnhancePanel({
   const enhancedByKey = useMemo(() => {
     const map = new Map<string, HousePhotoItem>()
     for (const p of sortedEnhanced) {
+      const originalPath = (p as any)?.enhanced?.originalPath
+      if (typeof originalPath === "string" && originalPath.trim()) {
+        map.set(normalizePhotoKey(originalPath), p)
+        continue
+      }
       map.set(normalizePhotoKey(p.path), p)
     }
     return map
@@ -158,16 +164,7 @@ export function HouseMediaEnhancePanel({
         }
       }
 
-      const originalIdx = sorted.findIndex((p) => p.path === photo.path)
-      const fallback = originalIdx >= 0 && sortedEnhanced[originalIdx] ? sortedEnhanced[originalIdx] : null
-      if (!fallback) return null
-
-      return {
-        id: fallback.path,
-        path: fallback.path,
-        url: toMediaUrl(fallback.path),
-        createdAt: fallback.createdAt,
-      }
+      return null
     }
   }, [enhancedByKey, sorted, sortedEnhanced])
 

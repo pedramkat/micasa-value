@@ -31,13 +31,20 @@ function extractAddressFromHouseDescription(description?: string | null): string
     }
 }
 
-export async function processHouseDataWithOpenAI(houseId: string, logUserId: string): Promise<any> {
+export async function processHouseDataWithOpenAI(houseId: string, logUserId: string, costUserId?: string | null): Promise<any> {
     try {
         const house = await houseService.findById(houseId)
         if (!house || !house.botTexts) {
             console.log(`[User ${logUserId}] No house data found for processing`)
             return null
         }
+
+        const resolvedCostUserId =
+            typeof costUserId === "string" && costUserId.trim()
+                ? costUserId.trim()
+                : typeof (house as any).userId === "string" && (house as any).userId.trim()
+                  ? ((house as any).userId as string)
+                  : null
 
         let nearbyPlacesSummary = ""
         try {
@@ -48,6 +55,9 @@ export async function processHouseDataWithOpenAI(houseId: string, logUserId: str
                     lon: latLon.lon,
                     radiusMeters: 1000,
                     limitPerCategory: 3,
+                    track: resolvedCostUserId
+                        ? { userId: resolvedCostUserId, houseId, operation: "google_places_nearby", endpoint: "places.nearbysearch" }
+                        : undefined,
                 })
                 nearbyPlacesSummary = googlePlacesService.formatNearbyPlacesForPrompt(nearby)
             }
@@ -134,7 +144,20 @@ export async function processHouseDataWithOpenAI(houseId: string, logUserId: str
             },
         ]
 
-        const response = await openaiService.chatWithHistory(messages)
+        const response = await openaiService.chatWithHistory(
+            messages,
+            resolvedCostUserId
+                ? {
+                      userId: resolvedCostUserId,
+                      houseId,
+                      provider: "openai",
+                      category: "text",
+                      operation: "process_house_data",
+                      endpoint: "chat.completions",
+                      model: "gpt-4o",
+                  }
+                : undefined,
+        )
         console.log(`[User ${logUserId}] OpenAI response:`, response)
 
         try {

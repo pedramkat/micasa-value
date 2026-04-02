@@ -104,7 +104,12 @@ async function maybeAskForLocation(ctx: any, telegramUserId: number, houseId: st
 
 // Helper function to process house data with OpenAI when session ends
 async function processHouseDataWithOpenAI(houseId: string, telegramUserId: number) {
-    return processHouseDataWithOpenAIShared(houseId, telegramUserId.toString())
+    const telegramId = telegramUserId.toString()
+    const appUser = await prisma.user.findUnique({
+        where: { telegramId },
+        select: { id: true },
+    })
+    return processHouseDataWithOpenAIShared(houseId, telegramId, appUser?.id ?? null)
 }
 
 // Helper to create the persistent keyboard
@@ -471,11 +476,28 @@ bot.on("voice", async (ctx) => {
 
             // Transcribe with OpenAI
             await ctx.reply("🎤 Transcribing...", mainKeyboard)
-            const transcription = await openaiService.transcribe(buffer, `voice_${voice.file_id}.ogg`)
+            const appUser = await prisma.user.findUnique({
+                where: { telegramId },
+                select: { id: true },
+            })
+            const houseId = userHouses.get(userId)
+            const transcription = await openaiService.transcribe(buffer, `voice_${voice.file_id}.ogg`, {
+                durationSeconds: voice.duration,
+                track: appUser?.id
+                    ? {
+                          userId: appUser.id,
+                          houseId: houseId ?? null,
+                          provider: "openai",
+                          category: "voice",
+                          operation: "voice_to_text",
+                          endpoint: "audio.transcriptions",
+                          model: "whisper-1",
+                      }
+                    : undefined,
+            })
             console.log(`[User ${userId}] Transcription: ${transcription}`)
 
             // Save to database
-            const houseId = userHouses.get(userId)
             if (houseId) {
                 try {
                     const updatedHouse = await houseService.addBotText(houseId, {
@@ -736,12 +758,17 @@ setInterval(async () => {
                     // Find house associated with this session's telegramId
                     const user = await prisma.user.findUnique({
                         where: { telegramId: session.telegramId },
-                        include: { houses: true }
+                        select: { id: true }
                     })
                     
-                    if (user && user.houses.length > 0) {
-                        // Get the most recent house (likely the one for this session)
-                        const house = user.houses[user.houses.length - 1]
+                    if (user) {
+                        const house = await prisma.house.findFirst({
+                            where: { userId: user.id },
+                            orderBy: { createdAt: "desc" },
+                            select: { id: true },
+                        })
+
+                        if (!house) continue
                         
                         console.log(`[Session Cleanup] Processing house ${house.id} for expired session ${session.id}`)
                         await processHouseDataWithOpenAI(house.id, parseInt(session.telegramId))

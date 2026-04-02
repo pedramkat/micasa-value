@@ -2,6 +2,8 @@
 
 import * as React from "react"
 
+import { usePathname, useRouter, useSearchParams } from "next/navigation"
+
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
 export function HouseDetailTabs({
@@ -15,8 +17,21 @@ export function HouseDetailTabs({
   valuation: React.ReactNode
   analytics: React.ReactNode
 }) {
+  const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
+
+  const activeTab = searchParams.get("tab") ?? "overview"
+
   return (
-    <Tabs defaultValue="overview">
+    <Tabs
+      value={activeTab}
+      onValueChange={(v) => {
+        const next = new URLSearchParams(searchParams.toString())
+        next.set("tab", v)
+        router.replace(`${pathname}?${next.toString()}`, { scroll: false })
+      }}
+    >
       <TabsList className="bg-muted/60">
         <TabsTrigger value="overview">Overview</TabsTrigger>
         <TabsTrigger value="media">Media</TabsTrigger>

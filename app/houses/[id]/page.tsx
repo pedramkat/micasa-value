@@ -5,6 +5,8 @@ import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import { houseService } from "@/lib/services/house.service";
 import { processHouseDataWithOpenAI } from "@/lib/services/house-ai.service";
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "@/auth";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import fs from "node:fs/promises";
@@ -14,12 +16,14 @@ import { InlineTextEditor } from "@/components/inline-text-editor";
 import { HouseMediaEnhancePanel } from "@/components/house-media-enhance-panel";
 import { HouseDetailTabs } from "@/components/house-detail-tabs";
 import { OwnerSelect } from "@/components/house/OwnerSelect";
+import { FeatureImagePicker } from "@/components/house/FeatureImagePicker";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { MarketMetricsCards } from "@/components/house/MarketMetricsCards";
 import { PriceHistoryChart } from "@/components/house/PriceHistoryChart";
 import { IstatComparisonChart } from "@/components/house/IstatComparisonChart";
 import { ZonePriceMap } from "@/components/house/ZonePriceMap";
+import { HouseLocationMap } from "@/components/house/HouseLocationMap";
 import { generatePriceHistory, getMarketMetrics, getZonesForCity } from "@/lib/market-data";
 import { ArrowLeft, MapPin, Calculator, Brain, Trash2, Eye, FileText } from "lucide-react";
 
@@ -575,7 +579,22 @@ export default async function House({
   async function regenerateAI() {
     "use server";
 
-    await processHouseDataWithOpenAI(houseId, `web-${houseId}`)
+    const session = await getServerSession(authOptions)
+    const sessionUserId = session?.user?.id
+    const sessionEmail = session?.user?.email
+
+    let requesterUserId: string | null = typeof sessionUserId === "string" && sessionUserId.trim() ? sessionUserId : null
+    if (requesterUserId) {
+      const exists = await prisma.user.findUnique({ where: { id: requesterUserId }, select: { id: true } })
+      if (!exists) requesterUserId = null
+    }
+
+    if (!requesterUserId && typeof sessionEmail === "string" && sessionEmail.trim()) {
+      const user = await prisma.user.findUnique({ where: { email: sessionEmail.trim() }, select: { id: true } })
+      requesterUserId = user?.id ?? null
+    }
+
+    await processHouseDataWithOpenAI(houseId, `web-${houseId}`, requesterUserId)
     redirect(`/houses/${houseId}`)
   }
 
@@ -741,28 +760,20 @@ export default async function House({
         <h2 className="text-base font-semibold">Location</h2>
         {coordinateLatLon ? (
           <div className="mt-4 overflow-hidden rounded-xl bg-muted h-64">
-            <iframe
-              title="House location"
-              className="h-full w-full border-0"
-              loading="lazy"
-              referrerPolicy="no-referrer-when-downgrade"
-              src={(() => {
-                const { lat, lon } = coordinateLatLon
-                const delta = 0.001
-                const left = lon - delta
-                const right = lon + delta
-                const top = lat + delta
-                const bottom = lat - delta
-                const bbox = `${left}%2C${bottom}%2C${right}%2C${top}`
-                const marker = `${lat}%2C${lon}`
-                return `https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik&marker=${marker}`
-              })()}
-            />
+            <HouseLocationMap lat={coordinateLatLon.lat} lon={coordinateLatLon.lon} />
           </div>
         ) : (
           <p className="mt-2 text-sm text-muted-foreground">No valid coordinates available for this house.</p>
         )}
       </section>
+
+      {/* Feature Image */}
+      <FeatureImagePicker
+        houseId={houseId}
+        photos={photoItems}
+        enhancedPhotos={enhancedPhotoItems}
+        featureImagePath={(house as any).featureImagePath ?? null}
+      />
 
       <Card>
         <CardHeader className="pb-3">

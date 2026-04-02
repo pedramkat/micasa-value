@@ -4,6 +4,8 @@ import { useCallback, useMemo, useState } from "react"
 import { CheckSquare, Loader2, Sparkles, XSquare } from "lucide-react"
 import { AnimatePresence, motion } from "framer-motion"
 
+import { usePathname, useRouter, useSearchParams } from "next/navigation"
+
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -23,10 +25,15 @@ interface MediaManagerProps {
 }
 
 export function MediaManager({ photos, enhancedPhotos, getEnhancedForPreview, onEnhanceSelected, onDelete }: MediaManagerProps) {
+  const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
+
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [previewPhoto, setPreviewPhoto] = useState<MediaPhoto | null>(null)
   const [isEnhancing, setIsEnhancing] = useState(false)
-  const [tab, setTab] = useState<TabValue>("originals")
+
+  const tab = (searchParams.get("mediaTab") as TabValue) ?? "originals"
 
   const currentPhotos = tab === "originals" ? photos : enhancedPhotos
 
@@ -95,7 +102,9 @@ export function MediaManager({ photos, enhancedPhotos, getEnhancedForPreview, on
       <Tabs
         value={tab}
         onValueChange={(v) => {
-          setTab(v as TabValue)
+          const next = new URLSearchParams(searchParams.toString())
+          next.set("mediaTab", v)
+          router.replace(`${pathname}?${next.toString()}`, { scroll: false })
           clearSelection()
         }}
       >
@@ -143,7 +152,7 @@ export function MediaManager({ photos, enhancedPhotos, getEnhancedForPreview, on
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
-              className="flex items-center gap-3 rounded-xl bg-primary/5 border border-primary/20 px-4 py-3"
+              className="mt-3 flex items-center gap-3 rounded-xl bg-primary/5 border border-primary/20 px-4 py-3"
             >
               <span className="text-sm font-medium">{selected.size} selected</span>
               <div className="flex-1" />

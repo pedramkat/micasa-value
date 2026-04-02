@@ -19,7 +19,7 @@ export async function POST(request: Request) {
 
     const house = await prisma.house.findUnique({
       where: { id: houseId },
-      select: { media: true },
+      select: { media: true, userId: true },
     })
 
     const existingMedia = house?.media && typeof house.media === "object" ? (house.media as any) : {}
@@ -27,7 +27,11 @@ export async function POST(request: Request) {
 
     const results = [] as any[]
     for (const originalPath of safePaths) {
-      const enhanced = await houseMediaService.enhanceImage({ houseId, originalPath })
+      const enhanced = await houseMediaService.enhanceImage({
+        houseId,
+        originalPath,
+        track: house?.userId ? { userId: house.userId, operation: "image_enhance" } : undefined,
+      })
       results.push(enhanced.stored)
     }
 

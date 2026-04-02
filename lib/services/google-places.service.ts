@@ -1,3 +1,5 @@
+import { costTrackerService } from "@/lib/services/cost-tracker.service";
+
 type PlacesCategory = "schools" | "supermarkets" | "trainStations";
 
 export type NearbyPlace = {
@@ -97,6 +99,7 @@ export class GooglePlacesService {
     lon: number;
     radiusMeters?: number;
     limitPerCategory?: number;
+    track?: { userId?: string | null; houseId?: string | null; endpoint?: string; operation?: string };
   }): Promise<NearbyPlacesResult | null> {
     const apiKey = process.env.GOOGLE_PLACES_API_KEY;
     if (!apiKey) return null;
@@ -124,9 +127,38 @@ export class GooglePlacesService {
       }),
     ]);
 
+    const userId = params.track?.userId;
+    if (userId) {
+      const perRequestCostUsd = (() => {
+        const raw = process.env.GOOGLE_PLACES_NEARBY_COST_USD
+        if (typeof raw !== "string" || !raw.trim()) return 0
+        const n = Number(raw)
+        return Number.isFinite(n) ? n : 0
+      })();
+
+      const requestsMade = 3;
+      const totalCostUsd = perRequestCostUsd * requestsMade;
+      await costTrackerService.trackCost({
+        userId,
+        houseId: params.track?.houseId ?? null,
+        provider: "google",
+        category: "places",
+        operation: params.track?.operation ?? "places_nearby",
+        endpoint: params.track?.endpoint ?? "places.nearbysearch",
+        costUsd: totalCostUsd,
+        unitsUsed: requestsMade,
+        metadata: {
+          radiusMeters,
+          categories: ["school", "supermarket", "train_station"],
+          perRequestCostUsd,
+          requestsMade,
+        },
+      });
+    }
+
     const filteredSupermarkets = supermarkets
       .filter((p) => !isLikelyMiniMarket(p))
-      .slice(0, limitPerCategory)
+      .slice(0, limitPerCategory);
 
     return {
       radiusMeters,

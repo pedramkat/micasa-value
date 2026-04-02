@@ -11,8 +11,9 @@ export async function PATCH(
     return NextResponse.json({ error: "Missing house id" }, { status: 400 });
   }
 
-  const body = (await request.json()) as { ownerId?: string | null };
+  const body = (await request.json()) as { ownerId?: string | null; featureImagePath?: string | null };
   const ownerIdRaw = body?.ownerId;
+  const featureImagePathRaw = body?.featureImagePath;
 
   let ownerId: string | null = null;
   if (typeof ownerIdRaw === "string") {
@@ -20,11 +21,29 @@ export async function PATCH(
     if (trimmed) ownerId = trimmed;
   }
 
+  let featureImagePath: string | null | undefined = undefined;
+  if (featureImagePathRaw === null) {
+    featureImagePath = null;
+  } else if (typeof featureImagePathRaw === "string") {
+    const trimmed = featureImagePathRaw.trim();
+    featureImagePath = trimmed ? trimmed : null;
+
+    if (featureImagePath) {
+      const normalized = featureImagePath.replace(/\\/g, "/");
+      const allowedPrefixes = [`storage/media/${id}/`, `storage/enhanced_media/${id}/`];
+      if (normalized.includes("..") || !allowedPrefixes.some((p) => normalized.startsWith(p))) {
+        return NextResponse.json({ error: "Invalid featureImagePath" }, { status: 400 });
+      }
+      featureImagePath = normalized;
+    }
+  }
+
   try {
     await prisma.house.update({
       where: { id },
       data: {
         ownerId,
+        ...(featureImagePath !== undefined ? { featureImagePath } : {}),
       },
       select: { id: true, ownerId: true },
     });

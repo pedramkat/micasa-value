@@ -19,6 +19,7 @@ export class HousePdfService {
         description: true,
         owner: { select: { name: true, email: true } },
         user: { select: { name: true, email: true } },
+        userId: true,
         aiCurrent: true,
         valuationHistory: true,
         pricingCurrent: true,
@@ -229,7 +230,22 @@ export class HousePdfService {
         },
       ]
 
-      proposalText = (await openaiService.chatWithHistory(messages)).trim() || null
+      proposalText = (
+        await openaiService.chatWithHistory(
+          messages,
+          house.userId
+            ? {
+                userId: house.userId,
+                houseId,
+                provider: "openai",
+                category: "text",
+                operation: "pdf_proposal",
+                endpoint: "chat.completions",
+                model: "gpt-4o",
+              }
+            : undefined,
+        )
+      ).trim() || null
     } catch {
       proposalText = null
     }

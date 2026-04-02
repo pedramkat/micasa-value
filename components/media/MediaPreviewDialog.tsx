@@ -35,7 +35,7 @@ export function MediaPreviewDialog({ photo, enhancedVersion, onClose }: MediaPre
         if (!open) onClose()
       }}
     >
-      <DialogContent className="max-w-4xl p-0 overflow-hidden bg-black/95 border-none">
+      <DialogContent hideCloseButton className="max-w-4xl p-0 overflow-hidden bg-black/95 border-none">
         <DialogTitle className="sr-only">Photo preview</DialogTitle>
 
         <div className="absolute top-0 left-0 right-0 z-20 flex items-center justify-between p-4">

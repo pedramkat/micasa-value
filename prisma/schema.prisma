@@ -28,6 +28,7 @@ model User {
   sessions   Session[]
   createdHouses House[] @relation("HouseCreator")
   ownedHouses   House[] @relation("HouseOwner")
+  apiUsageCosts ApiUsageCost[]
   role       Role      @default(AGENT)
 }
 
@@ -49,6 +50,7 @@ model House {
   aiHistory   Json?    @db.JsonB
   valuationHistory Json? @db.JsonB
   media       Json?    @db.JsonB
+  featureImagePath String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -172,4 +174,40 @@ enum Role {
   MANAGER
   AGENT
   USER
+}
+
+enum ApiProvider {
+  openai
+  google
+}
+
+enum ApiCostCategory {
+  image
+  text
+  voice
+  places
+}
+
+model ApiUsageCost {
+  id        String          @id @default(cuid())
+  userId    String
+  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  houseId   String?
+  provider  ApiProvider
+  category  ApiCostCategory
+  operation String          @default("unknown")
+  endpoint  String
+  costUsd   Decimal         @db.Decimal(10, 6)
+  unitsUsed Decimal?        @db.Decimal(20, 6)
+  metadata  Json?           @db.JsonB
+  createdAt DateTime        @default(now())
+
+  @@index([userId])
+  @@index([provider])
+  @@index([category])
+  @@index([createdAt])
+  @@index([userId, createdAt])
+  @@index([houseId])
+  @@index([operation])
+  @@unique([userId, houseId, provider, operation])
 }
