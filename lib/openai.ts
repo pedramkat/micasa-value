@@ -2,6 +2,7 @@ import { openai } from "@ai-sdk/openai"
 import { generateText, streamText } from "ai"
 import { createOpenAI } from "@ai-sdk/openai"
 import { costTrackerService } from "@/lib/services/cost-tracker.service"
+import { settingsService } from "@/lib/services/settings.service"
 
 type TrackContext = {
     userId?: string | null
@@ -64,10 +65,15 @@ function calcOpenAiWhisperCostUsd(params: { durationSeconds: number }): number {
 }
 
 export class OpenAIService {
-    private model = openai("gpt-4o")
     private openaiClient = createOpenAI({
         apiKey: process.env.OPENAI_API_KEY,
     })
+
+    private async resolveModelName(track?: TrackContext): Promise<string> {
+        const override = typeof track?.model === "string" ? track.model.trim() : ""
+        if (override) return override
+        return settingsService.getDefaultOpenAiModel()
+    }
 
     private async sleep(ms: number) {
         await new Promise((resolve) => setTimeout(resolve, ms))
@@ -77,8 +83,9 @@ export class OpenAIService {
      * Generate a simple text response from OpenAI
      */
     async chat(userMessage: string, systemPrompt?: string, track?: TrackContext): Promise<string> {
+        const modelName = await this.resolveModelName(track)
         const result: any = await generateText({
-            model: this.model,
+            model: openai(modelName),
             messages: [
                 ...(systemPrompt ? [{ role: "system" as const, content: systemPrompt }] : []),
                 { role: "user" as const, content: userMessage },
@@ -102,7 +109,7 @@ export class OpenAIService {
                 costUsd,
                 unitsUsed: totalTokens,
                 metadata: {
-                    model: track?.model ?? "gpt-4o",
+                    model: modelName,
                     inputTokens,
                     outputTokens,
                     totalTokens,
@@ -117,8 +124,9 @@ export class OpenAIService {
      * Stream a response from OpenAI (for real-time responses)
      */
     async chatStream(userMessage: string, systemPrompt?: string) {
+        const modelName = await this.resolveModelName()
         const result = await streamText({
-            model: this.model,
+            model: openai(modelName),
             messages: [
                 ...(systemPrompt ? [{ role: "system" as const, content: systemPrompt }] : []),
                 { role: "user" as const, content: userMessage },
@@ -135,8 +143,9 @@ export class OpenAIService {
         messages: Array<{ role: "user" | "assistant" | "system"; content: string }>,
         track?: TrackContext,
     ): Promise<string> {
+        const modelName = await this.resolveModelName(track)
         const result: any = await generateText({
-            model: this.model,
+            model: openai(modelName),
             messages,
         })
 
@@ -157,7 +166,7 @@ export class OpenAIService {
                 costUsd,
                 unitsUsed: totalTokens,
                 metadata: {
-                    model: track?.model ?? "gpt-4o",
+                    model: modelName,
                     inputTokens,
                     outputTokens,
                     totalTokens,

@@ -33,10 +33,10 @@ export function HouseDetailTabs({
       }}
     >
       <TabsList className="bg-muted/60">
-        <TabsTrigger value="overview">Overview</TabsTrigger>
+        <TabsTrigger value="overview">Panoramica</TabsTrigger>
         <TabsTrigger value="media">Media</TabsTrigger>
-        <TabsTrigger value="valuation">Valuation</TabsTrigger>
-        <TabsTrigger value="analytics">Analytics</TabsTrigger>
+        <TabsTrigger value="valuation">Valutazione</TabsTrigger>
+        <TabsTrigger value="analytics">Analisi</TabsTrigger>
       </TabsList>
 
       <TabsContent value="overview" className="mt-6 space-y-6">

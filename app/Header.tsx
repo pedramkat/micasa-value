@@ -17,13 +17,13 @@ export default function Header() {
             href="/houses" 
             className="bg-primary text-primary-foreground px-4 py-2 rounded-lg hover:bg-primary/90 transition"
           >
-            Houses
+            Case
           </Link>
           <Link 
             href="/configurations" 
             className="bg-secondary text-secondary-foreground px-4 py-2 rounded-lg hover:bg-secondary/80 transition"
           >
-            Configurations
+            Configurazione
           </Link>
           {session ? (
             <>

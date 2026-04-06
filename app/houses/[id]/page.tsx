@@ -17,6 +17,7 @@ import { HouseMediaEnhancePanel } from "@/components/house-media-enhance-panel";
 import { HouseDetailTabs } from "@/components/house-detail-tabs";
 import { OwnerSelect } from "@/components/house/OwnerSelect";
 import { FeatureImagePicker } from "@/components/house/FeatureImagePicker";
+import { AIRegenerateDialog } from "@/components/house/AIRegenerateDialog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { MarketMetricsCards } from "@/components/house/MarketMetricsCards";
@@ -24,8 +25,9 @@ import { PriceHistoryChart } from "@/components/house/PriceHistoryChart";
 import { IstatComparisonChart } from "@/components/house/IstatComparisonChart";
 import { ZonePriceMap } from "@/components/house/ZonePriceMap";
 import { HouseLocationMap } from "@/components/house/HouseLocationMap";
+import type { NearbyPlacePin } from "@/components/house/house-location.types";
 import { generatePriceHistory, getMarketMetrics, getZonesForCity } from "@/lib/market-data";
-import { ArrowLeft, MapPin, Calculator, Brain, Trash2, Eye, FileText } from "lucide-react";
+import { ArrowLeft, MapPin, Calculator, Trash2, Eye, FileText } from "lucide-react";
 
 export default async function House({
   params,
@@ -50,6 +52,56 @@ export default async function House({
   if (!house) {
     notFound();
   }
+
+  const omiPolygonId = typeof (house as any)?.omiPolygonId === "string" ? ((house as any).omiPolygonId as string) : null
+  const adjacentOmiPolygonIdsRaw = (house as any)?.adjacentOmiPolygonIds
+  const adjacentOmiPolygonIds = Array.isArray(adjacentOmiPolygonIdsRaw)
+    ? (adjacentOmiPolygonIdsRaw.filter((x: unknown) => typeof x === "string" && x) as string[])
+    : []
+  const omiPolygonRow = omiPolygonId
+    ? await prisma.omiPolygon.findUnique({
+        where: { id: omiPolygonId },
+        select: { polygonData: true },
+      })
+    : null
+  const omiPolygonGeoJson = omiPolygonRow?.polygonData ?? null
+
+  const adjacentOmiPolygons =
+    adjacentOmiPolygonIds.length > 0
+      ? await prisma.omiPolygon.findMany({
+          where: { id: { in: adjacentOmiPolygonIds } },
+          select: { id: true, polygonData: true, linkZona: true, zona: true, semester: true },
+        })
+      : []
+
+  const adjacentMarketValues =
+    adjacentOmiPolygons.length > 0
+      ? await prisma.omiMarketValue.findMany({
+          where: {
+            descrTipologia: "Abitazioni civili",
+            linkZona: { in: adjacentOmiPolygons.map((p) => p.linkZona) },
+            semester: { in: adjacentOmiPolygons.map((p) => p.semester) },
+          },
+          select: { linkZona: true, zona: true, semester: true, comprMin: true, comprMax: true },
+        })
+      : []
+
+  const adjacentMarketByKey = new Map(
+    adjacentMarketValues.map((mv) => [`${mv.linkZona}::${mv.zona ?? ""}::${mv.semester}`, mv]),
+  )
+
+  const adjacentOmiPolygonGeoJsons = adjacentOmiPolygons
+    .map((p) => {
+      if (!p?.polygonData) return null
+      const mv = adjacentMarketByKey.get(`${p.linkZona}::${p.zona ?? ""}::${p.semester}`)
+      return {
+        id: p.id,
+        geoJson: p.polygonData,
+        comprMin: mv?.comprMin ? mv.comprMin.toString() : null,
+        comprMax: mv?.comprMax ? mv.comprMax.toString() : null,
+      }
+    })
+    .filter(Boolean) as Array<{ id: string; geoJson: unknown; comprMin: string | null; comprMax: string | null }>
 
   async function addHouseParameter(formData: FormData) {
     "use server";
@@ -326,6 +378,67 @@ export default async function House({
 
   const avgEstimate = totalMin !== null && totalMax !== null ? (totalMin + totalMax) / 2 : null
 
+  const nearbyPlacesRows = await prisma.housePlace.findMany({
+    where: {
+      houseId,
+      distanceMeters: {
+        not: null,
+        lte: 500,
+      },
+    },
+    include: {
+      place: {
+        select: {
+          id: true,
+          name: true,
+          address: true,
+          raw: true,
+        },
+      },
+    },
+    orderBy: [{ distanceMeters: "asc" }],
+    take: 20,
+  })
+
+  const parseNumeric = (value: unknown): number | null => {
+    if (typeof value === "number" && Number.isFinite(value)) return value
+    if (typeof value === "string") {
+      const parsed = Number(value)
+      return Number.isFinite(parsed) ? parsed : null
+    }
+    return null
+  }
+
+  const nearbyPlaces: NearbyPlacePin[] = nearbyPlacesRows
+    .map((row): NearbyPlacePin | null => {
+      const raw = (row.place?.raw ?? {}) as any
+      const lat =
+        parseNumeric(raw?.lat) ??
+        parseNumeric(raw?.latitudine) ??
+        parseNumeric(raw?.latitude) ??
+        parseNumeric(raw?.geometry?.location?.lat)
+      const lon =
+        parseNumeric(raw?.lon) ??
+        parseNumeric(raw?.lng) ??
+        parseNumeric(raw?.longitude) ??
+        parseNumeric(raw?.geometry?.location?.lng)
+
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null
+
+      const distanceMeters = parseNumeric(row.distanceMeters)
+
+      return {
+        id: row.placeId,
+        name: row.place?.name ?? "Punto di interesse",
+        lat: lat as number,
+        lon: lon as number,
+        distanceMeters: distanceMeters,
+        category: row.category ?? null,
+        address: row.place?.address ?? null,
+      }
+    })
+    .filter((p): p is NearbyPlacePin => Boolean(p))
+
   const point = (house as any)?.coordinate
   const coordinateLatLon = (() => {
     if (!point || typeof point !== "object") return null
@@ -576,28 +689,6 @@ export default async function House({
     }
   }
 
-  async function regenerateAI() {
-    "use server";
-
-    const session = await getServerSession(authOptions)
-    const sessionUserId = session?.user?.id
-    const sessionEmail = session?.user?.email
-
-    let requesterUserId: string | null = typeof sessionUserId === "string" && sessionUserId.trim() ? sessionUserId : null
-    if (requesterUserId) {
-      const exists = await prisma.user.findUnique({ where: { id: requesterUserId }, select: { id: true } })
-      if (!exists) requesterUserId = null
-    }
-
-    if (!requesterUserId && typeof sessionEmail === "string" && sessionEmail.trim()) {
-      const user = await prisma.user.findUnique({ where: { email: sessionEmail.trim() }, select: { id: true } })
-      requesterUserId = user?.id ?? null
-    }
-
-    await processHouseDataWithOpenAI(houseId, `web-${houseId}`, requesterUserId)
-    redirect(`/houses/${houseId}`)
-  }
-
   async function deleteEvaluation(valuationId: string) {
     "use server";
 
@@ -677,7 +768,7 @@ export default async function House({
 
       {(houseParameterEntries.length > 0 || houseParametersByKey) && (
         <section className="rounded-xl border border-border bg-card p-5">
-          <h2 className="text-base font-semibold">House parameters</h2>
+          <h2 className="text-base font-semibold">Parametri dlla casa</h2>
           <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div className="sm:col-span-3">
               <IndirizzoInlineEditor initialValue={indirizzoValue} onSave={saveIndirizzo} />
@@ -686,11 +777,11 @@ export default async function House({
             <div className="sm:col-span-3">
               <form action={addHouseParameter} className="flex flex-col gap-2 sm:flex-row sm:items-end">
                 <div className="flex-1">
-                  <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Add house parameter</div>
+                  <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Aggiungi parametro casa</div>
                   <input
                     name="key"
                     list="house-parameter-keys"
-                    placeholder="Search parameter…"
+                    placeholder="Parametro di ricerca…"
                     className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm font-semibold"
                   />
                   <datalist id="house-parameter-keys">
@@ -701,10 +792,10 @@ export default async function House({
                 </div>
 
                 <div className="flex-1">
-                  <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Value</div>
+                  <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Valore</div>
                   <input
                     name="value"
-                    placeholder="Value (type-aware)"
+                    placeholder="Valore (sensibile al tipo)"
                     className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm font-semibold"
                   />
                 </div>
@@ -713,7 +804,7 @@ export default async function House({
                   type="submit"
                   className="inline-flex h-10 items-center justify-center rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground hover:bg-primary/90 transition-colors"
                 >
-                  Add
+                  Aggiungi
                 </button>
               </form>
             </div>
@@ -744,7 +835,7 @@ export default async function House({
       )}
 
       <section className="rounded-xl border border-border bg-card p-5">
-        <h2 className="text-base font-semibold">Description</h2>
+        <h2 className="text-base font-semibold">Descrizione</h2>
         <div className="mt-3 text-sm text-muted-foreground leading-relaxed">
           <InlineTextEditor
             initialValue={house.description ?? ""}
@@ -757,10 +848,19 @@ export default async function House({
       </section>
 
       <section className="rounded-xl border border-border bg-card p-5">
-        <h2 className="text-base font-semibold">Location</h2>
+        <h2 className="text-base font-semibold">Posizione</h2>
         {coordinateLatLon ? (
-          <div className="mt-4 overflow-hidden rounded-xl bg-muted h-64">
-            <HouseLocationMap lat={coordinateLatLon.lat} lon={coordinateLatLon.lon} />
+          <div className="mt-4 overflow-hidden rounded-xl bg-muted h-80">
+            <HouseLocationMap
+              lat={coordinateLatLon.lat}
+              lon={coordinateLatLon.lon}
+              omiPolygonId={omiPolygonId}
+              omiPolygonGeoJson={omiPolygonGeoJson}
+              adjacentOmiPolygons={adjacentOmiPolygonGeoJsons}
+              showOmiPolygons={false}
+              enableEditing
+              houseId={houseId}
+            />
           </div>
         ) : (
           <p className="mt-2 text-sm text-muted-foreground">No valid coordinates available for this house.</p>
@@ -777,7 +877,7 @@ export default async function House({
 
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-base">Owner</CardTitle>
+          <CardTitle className="text-base">Proprietario</CardTitle>
         </CardHeader>
         <CardContent>
           <OwnerSelect
@@ -791,7 +891,7 @@ export default async function House({
       <section className="rounded-xl border border-border bg-card p-5 flex items-center justify-between">
         <div className="text-sm">
           <div className="font-medium">{house.user?.name || "Anonymous"}</div>
-          <div className="text-xs text-muted-foreground">Agent</div>
+          <div className="text-xs text-muted-foreground">Agente</div>
         </div>
         <div className="text-xs text-muted-foreground">
           Updated {new Date(house.updatedAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
@@ -819,7 +919,15 @@ export default async function House({
               <PriceHistoryChart data={priceHistory} yoyChange={metrics.yoyChange} />
               <IstatComparisonChart zones={zones} activeZone={metrics.zone} />
             </div>
-            <ZonePriceMap zones={zones} activeZone={metrics.zone} coordinate={coordinateLatLon} />
+            <ZonePriceMap
+              zones={zones}
+              activeZone={metrics.zone}
+              coordinate={coordinateLatLon}
+              omiPolygonId={omiPolygonId}
+              omiPolygonGeoJson={omiPolygonGeoJson}
+              adjacentOmiPolygons={adjacentOmiPolygonGeoJsons}
+              nearbyPlaces={nearbyPlaces}
+            />
           </>
         )
       })()}
@@ -1087,7 +1195,7 @@ export default async function House({
               className="inline-flex h-9 items-center justify-center rounded-md border border-input bg-background px-3 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
             >
               <Calculator className="mr-2 h-4 w-4" />
-              Calculate geom
+              Calcola geom
             </button>
           </form>
 
@@ -1097,19 +1205,17 @@ export default async function House({
               className="inline-flex h-9 items-center justify-center rounded-md border border-input bg-background px-3 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
             >
               <Calculator className="mr-2 h-4 w-4" />
-              Calculate price
+              Calcola prezzo
             </button>
           </form>
 
-          <form action={regenerateAI}>
-            <button
-              type="submit"
-              className="inline-flex h-9 items-center justify-center rounded-md border border-input bg-background px-3 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
-            >
-              <Brain className="mr-2 h-4 w-4" />
-              Regenerate AI
-            </button>
-          </form>
+          <AIRegenerateDialog
+            houseId={houseId}
+            currentTitle={house.title}
+            currentDescription={house.description ?? ""}
+            currentHouseParameters={houseParametersByKey}
+            currentConfigurations={aiConfigurationsByTitle}
+          />
 
           <form action={deleteHouse}>
             <button

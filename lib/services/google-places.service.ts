@@ -1,4 +1,5 @@
 import { costTrackerService } from "@/lib/services/cost-tracker.service";
+import prisma from "@/lib/prisma";
 
 type PlacesCategory = "schools" | "supermarkets" | "trainStations";
 
@@ -9,6 +10,8 @@ export type NearbyPlace = {
   rating?: number;
   userRatingsTotal?: number;
   types?: string[];
+  lat?: number;
+  lon?: number;
 };
 
 export type NearbyPlacesResult = {
@@ -28,6 +31,17 @@ function pickNumber(v: unknown): number | null {
     return Number.isFinite(n) ? n : null;
   }
   return null;
+}
+
+function haversineDistanceMeters(a: { lat: number; lon: number }, b: { lat: number; lon: number }): number {
+  const toRad = (deg: number) => (deg * Math.PI) / 180;
+  const R = 6371000;
+  const dLat = toRad(b.lat - a.lat);
+  const dLon = toRad(b.lon - a.lon);
+  const lat1 = toRad(a.lat);
+  const lat2 = toRad(b.lat);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * (Math.sin(dLon / 2) ** 2);
+  return 2 * R * Math.asin(Math.sqrt(h));
 }
 
 async function fetchNearby(
@@ -73,6 +87,9 @@ async function fetchNearby(
       const userRatingsTotal = pickNumber(r?.user_ratings_total) ?? undefined;
       const types = Array.isArray(r?.types) ? r.types.filter((t: unknown) => typeof t === "string") : undefined;
 
+      const placeLat = pickNumber(r?.geometry?.location?.lat) ?? undefined;
+      const placeLon = pickNumber(r?.geometry?.location?.lng) ?? undefined;
+
       return {
         placeId,
         name,
@@ -80,6 +97,8 @@ async function fetchNearby(
         rating,
         userRatingsTotal,
         types,
+        lat: placeLat,
+        lon: placeLon,
       } satisfies NearbyPlace;
     })
     .filter(Boolean) as NearbyPlace[];
@@ -94,11 +113,142 @@ function isLikelyMiniMarket(place: NearbyPlace): boolean {
 }
 
 export class GooglePlacesService {
+  private async loadCachedNearbyPlaces(params: {
+    houseId: string;
+    limitPerCategory: number;
+    maxAgeMinutes: number;
+  }): Promise<Record<PlacesCategory, NearbyPlace[]> | null> {
+    const since = new Date(Date.now() - params.maxAgeMinutes * 60 * 1000);
+    const rows = await (prisma as any).housePlace.findMany({
+      where: {
+        houseId: params.houseId,
+        fetchedAt: { gte: since },
+      },
+      include: {
+        place: {
+          select: {
+            googlePlaceId: true,
+            name: true,
+            address: true,
+            rating: true,
+            userRatingsTotal: true,
+            types: true,
+            raw: true,
+          },
+        },
+      },
+      orderBy: [{ fetchedAt: "desc" }],
+    });
+
+    const init: Record<PlacesCategory, NearbyPlace[]> = {
+      schools: [],
+      supermarkets: [],
+      trainStations: [],
+    };
+
+    for (const r of rows as any[]) {
+      const category = r?.category as PlacesCategory;
+      if (category !== "schools" && category !== "supermarkets" && category !== "trainStations") continue;
+      if (init[category].length >= params.limitPerCategory) continue;
+
+      const p = r?.place;
+      const placeId = pickString(p?.googlePlaceId);
+      const name = pickString(p?.name);
+      if (!placeId || !name) continue;
+
+      init[category].push({
+        placeId,
+        name,
+        address: pickString(p?.address) ?? undefined,
+        rating: typeof p?.rating === "number" ? p.rating : undefined,
+        userRatingsTotal: typeof p?.userRatingsTotal === "number" ? p.userRatingsTotal : undefined,
+        types: Array.isArray(p?.types) ? p.types : undefined,
+        lat: pickNumber(p?.raw?.lat) ?? undefined,
+        lon: pickNumber(p?.raw?.lon) ?? undefined,
+      });
+    }
+
+    const allHaveSome = (Object.keys(init) as PlacesCategory[]).every((k) => init[k].length > 0);
+    return allHaveSome ? init : null;
+  }
+
+  private async persistNearbyPlaces(params: {
+    houseId: string;
+    origin: { lat: number; lon: number };
+    categories: Record<PlacesCategory, NearbyPlace[]>;
+  }): Promise<void> {
+    const categoryEntries = Object.entries(params.categories) as Array<[PlacesCategory, NearbyPlace[]]>;
+
+    for (const [category, places] of categoryEntries) {
+      for (const p of places) {
+        try {
+          const place = await (prisma as any).place.upsert({
+            where: { googlePlaceId: p.placeId },
+            create: {
+              googlePlaceId: p.placeId,
+              name: p.name,
+              address: p.address ?? null,
+              rating: typeof p.rating === "number" ? p.rating : null,
+              userRatingsTotal: typeof p.userRatingsTotal === "number" ? Math.trunc(p.userRatingsTotal) : null,
+              types: Array.isArray(p.types) ? p.types : [],
+              raw: p as any,
+            },
+            update: {
+              name: p.name,
+              address: p.address ?? null,
+              rating: typeof p.rating === "number" ? p.rating : null,
+              userRatingsTotal: typeof p.userRatingsTotal === "number" ? Math.trunc(p.userRatingsTotal) : null,
+              types: Array.isArray(p.types) ? p.types : [],
+              raw: p as any,
+            },
+            select: { id: true },
+          });
+
+          if (typeof p.lat === "number" && typeof p.lon === "number") {
+            await (prisma as any).$executeRawUnsafe(
+              'UPDATE "Place" SET "location" = ST_SetSRID(ST_MakePoint($1, $2), 4326) WHERE "id" = $3',
+              p.lon,
+              p.lat,
+              place.id,
+            );
+          }
+
+          await (prisma as any).housePlace.create({
+            data: {
+              houseId: params.houseId,
+              placeId: place.id,
+              category,
+              distanceMeters:
+                typeof p.lat === "number" && typeof p.lon === "number"
+                  ? Math.round(haversineDistanceMeters(params.origin, { lat: p.lat, lon: p.lon }))
+                  : null,
+            },
+            select: { id: true },
+          });
+        } catch (e: any) {
+          const code = e?.code;
+          if (code === "P2002") {
+            continue;
+          }
+          if (process.env.NODE_ENV !== "production") {
+            console.error("[GooglePlaces] persistNearbyPlaces failed", {
+              houseId: params.houseId,
+              category,
+              placeId: p.placeId,
+              error: e,
+            });
+          }
+        }
+      }
+    }
+  }
+
   async getNearbyImportantPlaces(params: {
     lat: number;
     lon: number;
     radiusMeters?: number;
     limitPerCategory?: number;
+    cacheMaxAgeMinutes?: number;
     track?: { userId?: string | null; houseId?: string | null; endpoint?: string; operation?: string };
   }): Promise<NearbyPlacesResult | null> {
     const apiKey = process.env.GOOGLE_PLACES_API_KEY;
@@ -111,6 +261,32 @@ export class GooglePlacesService {
     const limitPerCategory = typeof params.limitPerCategory === "number" && Number.isFinite(params.limitPerCategory)
       ? params.limitPerCategory
       : 5;
+
+    const cacheMaxAgeMinutes = typeof params.cacheMaxAgeMinutes === "number" && Number.isFinite(params.cacheMaxAgeMinutes)
+      ? Math.max(1, params.cacheMaxAgeMinutes)
+      : 60 * 24;
+
+    const houseIdForCache = params.track?.houseId;
+    if (typeof houseIdForCache === "string" && houseIdForCache.trim()) {
+      try {
+        const cached = await this.loadCachedNearbyPlaces({
+          houseId: houseIdForCache,
+          limitPerCategory,
+          maxAgeMinutes: cacheMaxAgeMinutes,
+        });
+        if (cached) {
+          return {
+            radiusMeters,
+            location: { lat: params.lat, lon: params.lon },
+            categories: cached,
+          };
+        }
+      } catch (e) {
+        if (process.env.NODE_ENV !== "production") {
+          console.error("[GooglePlaces] cache lookup failed", e);
+        }
+      }
+    }
 
     const [schools, supermarkets, trainStations] = await Promise.all([
       fetchNearby(apiKey, params.lat, params.lon, radiusMeters, {
@@ -160,14 +336,25 @@ export class GooglePlacesService {
       .filter((p) => !isLikelyMiniMarket(p))
       .slice(0, limitPerCategory);
 
+    const categories = {
+      schools: schools.slice(0, limitPerCategory),
+      supermarkets: filteredSupermarkets,
+      trainStations: trainStations.slice(0, limitPerCategory),
+    } satisfies Record<PlacesCategory, NearbyPlace[]>;
+
+    const houseId = params.track?.houseId;
+    if (typeof houseId === "string" && houseId.trim()) {
+      await this.persistNearbyPlaces({
+        houseId,
+        origin: { lat: params.lat, lon: params.lon },
+        categories,
+      });
+    }
+
     return {
       radiusMeters,
       location: { lat: params.lat, lon: params.lon },
-      categories: {
-        schools: schools.slice(0, limitPerCategory),
-        supermarkets: filteredSupermarkets,
-        trainStations: trainStations.slice(0, limitPerCategory),
-      },
+      categories,
     };
   }
 

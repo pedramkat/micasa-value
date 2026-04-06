@@ -31,7 +31,16 @@ function extractAddressFromHouseDescription(description?: string | null): string
     }
 }
 
-export async function processHouseDataWithOpenAI(houseId: string, logUserId: string, costUserId?: string | null): Promise<any> {
+interface ProcessHouseDataOptions {
+    previewOnly?: boolean
+}
+
+export async function processHouseDataWithOpenAI(
+    houseId: string,
+    logUserId: string,
+    costUserId?: string | null,
+    options?: ProcessHouseDataOptions,
+): Promise<any> {
     try {
         const house = await houseService.findById(houseId)
         if (!house || !house.botTexts) {
@@ -132,7 +141,7 @@ export async function processHouseDataWithOpenAI(houseId: string, logUserId: str
 
                 Inoltre ritorna un Title per la casa: usa l'indirizzo completo per il title e altre informazioni uniche e particolari per rendere la casa distinguibile. La risposta deve andare sotto la chiave title.
 
-                Inoltre scrivi una descrizione "bella", in italiano, adatta ad un annuncio immobiliare, utilizzando solo i dati presenti nei messaggi (se un dato non è presente, non inventarlo). ${nearbyPlacesSummary ? `\n\nIn aggiunta, puoi usare anche queste informazioni esterne su punti di interesse vicini (non inventare dettagli non presenti):\n${nearbyPlacesSummary}` : ""} Metti questa descrizione sotto la chiave description.
+                Inoltre scrivi una descrizione "bella", in italiano, adatta ad un annuncio immobiliare, utilizzando solo i dati presenti nei messaggi (se un dato non è presente, non inventarlo). La descrizione deve contenere almeno DUE paragrafi separati da una riga vuota, con 3-5 frasi ciascuno, e può includere dettagli emozionali o contestuali coerenti con i dati disponibili. ${nearbyPlacesSummary ? `\n\nIn aggiunta, puoi usare anche queste informazioni esterne su punti di interesse vicini (non inventare dettagli non presenti):\n${nearbyPlacesSummary}` : ""} Metti questa descrizione sotto la chiave description.
 
                 Infine riempi anche quest'altro json ${configurationsJson} della valutazione della casa con le informazioni che trovi nel messaggio di testo ricevuto, e metti la risposta sotto la chiave configurations.
 
@@ -173,6 +182,8 @@ export async function processHouseDataWithOpenAI(houseId: string, logUserId: str
             const parsedResponse = JSON.parse(jsonString)
             console.log(`[User ${logUserId}] Parsed response:`, JSON.stringify(parsedResponse, null, 2))
 
+            let enrichedResponse: any = parsedResponse
+
             if (parsedResponse.title || parsedResponse.houseParameters || parsedResponse.configurations || parsedResponse.description) {
                 const timestamp = new Date().toISOString()
                 const aiSnapshotId = randomUUID()
@@ -198,6 +209,16 @@ export async function processHouseDataWithOpenAI(houseId: string, logUserId: str
                 }
                 if (parsedResponse.title) aiParsed.title = parsedResponse.title
                 if (parsedResponse.description) aiParsed.description = parsedResponse.description
+
+                enrichedResponse = {
+                    ...parsedResponse,
+                    rawResponse: response,
+                    aiParsed,
+                }
+
+                if (options?.previewOnly) {
+                    return enrichedResponse
+                }
 
                 const currentAiHistory = Array.isArray((house as any).aiHistory) ? (house as any).aiHistory : []
                 const nextAiHistory = [
@@ -243,7 +264,7 @@ export async function processHouseDataWithOpenAI(houseId: string, logUserId: str
                 console.log(`[User ${logUserId}] No title, houseParameters or configurations in parsed response`)
             }
 
-            return parsedResponse
+            return enrichedResponse
         } catch (parseError) {
             console.error(`[User ${logUserId}] Error parsing OpenAI JSON response:`, parseError)
             console.log(`[User ${logUserId}] Raw response:`, response)

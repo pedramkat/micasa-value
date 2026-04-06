@@ -101,10 +101,57 @@ export async function GET(request: Request) {
     });
   }
 
-  const rows = result.rows.map((r: any) => ({
+  const rawRows = result.rows as Array<{
+    id: string;
+    userId: string | null;
+    houseId: string | null;
+    provider: string;
+    category: string;
+    operation: string;
+    endpoint: string;
+    costUsd: unknown;
+    unitsUsed: unknown;
+    createdAt: string | Date;
+  }>;
+
+  const uniqueHouseIds = Array.from(
+    new Set(
+      rawRows
+        .map((row) => (typeof row.houseId === "string" ? row.houseId.trim() : ""))
+        .filter((id): id is string => Boolean(id)),
+    ),
+  );
+  const houses = uniqueHouseIds.length
+    ? await prisma.house.findMany({
+        where: { id: { in: uniqueHouseIds } },
+        select: { id: true, title: true },
+      })
+    : [];
+  const houseTitleById = new Map(houses.map((house) => [house.id, house.title ?? null]));
+
+  const uniqueUserIds = Array.from(
+    new Set(
+      rawRows
+        .map((row) => (typeof row.userId === "string" ? row.userId.trim() : ""))
+        .filter((id): id is string => Boolean(id)),
+    ),
+  );
+  const users = uniqueUserIds.length
+    ? await prisma.user.findMany({
+        where: { id: { in: uniqueUserIds } },
+        select: { id: true, name: true, email: true },
+      })
+    : [];
+  const userNameById = new Map(
+    users.map((user) => [user.id, user.name?.trim() || user.email?.trim() || null]),
+  );
+
+  const rows = rawRows.map((r) => ({
     id: r.id,
     userId: r.userId,
     houseId: r.houseId,
+    houseTitle: typeof r.houseId === "string" ? houseTitleById.get(r.houseId) ?? null : null,
+    userName: typeof r.userId === "string" ? userNameById.get(r.userId) ?? null : null,
     provider: r.provider,
     category: r.category,
     operation: r.operation,

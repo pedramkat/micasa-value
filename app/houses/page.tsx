@@ -8,11 +8,20 @@ import { Building2, Loader2, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
+function toMediaUrl(storedPath: string): string {
+  const normalized = storedPath.replace(/\\/g, "/")
+  const prefix = "storage/"
+  const idx = normalized.indexOf(prefix)
+  const rel = idx >= 0 ? normalized.slice(idx + prefix.length) : normalized
+  return `/media/${rel}`
+}
+
 interface House {
   id: string;
   title: string;
   description?: string;
   createdAt: string;
+  featureImagePath?: string | null;
   user?: {
     name: string;
   };
@@ -81,25 +90,42 @@ function HousesList() {
             <div className="grid gap-4">
               {houses.map((house) => (
                 <Card key={house.id} className="hover:shadow-md transition-shadow">
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-base">
-                      <Link href={`/houses/${house.id}`} className="hover:underline">
-                        {house.title}
-                      </Link>
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="pt-0">
-                    <div className="flex flex-col gap-1 text-sm">
-                      <div className="text-muted-foreground">by {house.user?.name || "Anonymous"}</div>
-                      <div className="text-xs text-muted-foreground">
-                        {new Date(house.createdAt).toLocaleDateString("en-US", {
-                          year: "numeric",
-                          month: "long",
-                          day: "numeric",
-                        })}
-                      </div>
+                  <div className="flex gap-4 p-4">
+                    <div className="relative overflow-hidden rounded-lg bg-muted w-32 shrink-0 aspect-[4/3]">
+                      {house.featureImagePath ? (
+                        <img
+                          src={toMediaUrl(house.featureImagePath)}
+                          alt={house.title}
+                          className="h-full w-full object-cover"
+                          loading="lazy"
+                        />
+                      ) : (
+                        <div className="h-full w-full" />
+                      )}
                     </div>
-                  </CardContent>
+
+                    <div className="min-w-0 flex-1">
+                      <CardHeader className="p-0 pb-2">
+                        <CardTitle className="text-base">
+                          <Link href={`/houses/${house.id}`} className="hover:underline">
+                            {house.title}
+                          </Link>
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent className="p-0">
+                        <div className="flex flex-col gap-1 text-sm">
+                          <div className="text-muted-foreground">by {house.user?.name || "Anonymous"}</div>
+                          <div className="text-xs text-muted-foreground">
+                            {new Date(house.createdAt).toLocaleDateString("en-US", {
+                              year: "numeric",
+                              month: "long",
+                              day: "numeric",
+                            })}
+                          </div>
+                        </div>
+                      </CardContent>
+                    </div>
+                  </div>
                 </Card>
               ))}
             </div>
@@ -126,16 +152,16 @@ function HousesList() {
 
 export default function HousesPage() {
   return (
-    <div className="p-4 lg:p-8 max-w-5xl mx-auto space-y-6">
+    <div className="p-4 lg:p-8 space-y-8 max-w-7xl mx-auto">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Houses</h1>
-          <p className="text-sm text-muted-foreground mt-1">Manage properties, media and valuations.</p>
+          <h1 className="text-2xl font-bold tracking-tight">Case</h1>
+          <p className="text-sm text-muted-foreground mt-1">Gestione di immobili, media e valutazioni.</p>
         </div>
         <Button asChild className="gap-2">
           <Link href="/houses/new">
             <Plus className="h-4 w-4" />
-            New house
+            Nuove case
           </Link>
         </Button>
       </div>

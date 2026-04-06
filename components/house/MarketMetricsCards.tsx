@@ -34,27 +34,52 @@ export function MarketMetricsCards({ metrics }: Props) {
       sub: "Market vs OMI",
       accent: "text-orange-600 bg-orange-50",
     },
+    // prezzo immobile
+    // €/mq immobile
+    // media €/mq zona (puoi stimarla)
+    // delta = (prezzo_mq_immobile - prezzo_mq_zona) / prezzo_mq_zona
     {
       icon: Activity,
-      label: "Liquidity Index",
+      label: "Price Score",
       value: `${metrics.liquidityIndex}/100`,
-      sub: metrics.liquidityIndex >= 70 ? "High liquidity" : metrics.liquidityIndex >= 40 ? "Medium" : "Low liquidity",
+      sub: metrics.liquidityIndex >= 70 ? "Ottimo prezzo" : metrics.liquidityIndex >= 40 ? "Prezzo nella media" : "Sopravvalutato",
       accent: "text-emerald-600 bg-emerald-50",
     },
+    // {
+    //   icon: Activity,
+    //   label: "Liquidity Index",
+    //   value: `${metrics.liquidityIndex}/100`,
+    //   sub: metrics.liquidityIndex >= 70 ? "High liquidity" : metrics.liquidityIndex >= 40 ? "Medium" : "Low liquidity",
+    //   accent: "text-emerald-600 bg-emerald-50",
+    // },
     {
       icon: Users,
-      label: "Demand / Supply",
+      label: "Immobili simili",
       value: `${metrics.demandSupplyRatio.toFixed(2)}`,
-      sub: metrics.demandSupplyRatio > 1.2 ? "Seller's market" : metrics.demandSupplyRatio < 0.9 ? "Buyer's market" : "Balanced",
+      sub: metrics.demandSupplyRatio > 1.2 ? "Alta disponibilità" : metrics.demandSupplyRatio < 0.9 ? "Bassa disponibilità" : "Disponibilità media",
       accent: "text-blue-600 bg-blue-50",
     },
+    // {
+    //   icon: Users,
+    //   label: "Demand / Supply",
+    //   value: `${metrics.demandSupplyRatio.toFixed(2)}`,
+    //   sub: metrics.demandSupplyRatio > 1.2 ? "Seller's market" : metrics.demandSupplyRatio < 0.9 ? "Buyer's market" : "Balanced",
+    //   accent: "text-blue-600 bg-blue-50",
+    // },
     {
       icon: Percent,
-      label: "Avg. Negotiation",
+      label: "Istat Delta Zona",
       value: `-${metrics.avgNegotiationDiscount}%`,
-      sub: "From asking price",
+      sub: "Media della zona",
       accent: "text-rose-600 bg-rose-50",
     },
+    // {
+    //   icon: Percent,
+    //   label: "Avg. Negotiation",
+    //   value: `-${metrics.avgNegotiationDiscount}%`,
+    //   sub: "From asking price",
+    //   accent: "text-rose-600 bg-rose-50",
+    // },
   ]
 
   return (

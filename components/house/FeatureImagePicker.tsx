@@ -30,8 +30,7 @@ export function FeatureImagePicker({ houseId, photos, enhancedPhotos, featureIma
   const [selectedPath, setSelectedPath] = useState<string | null>(initialPath);
   const [tab, setTab] = useState("originals");
 
-  const allPhotos = [...photos, ...enhancedPhotos];
-  const selectedPhoto = allPhotos.find((p) => p.path === selectedPath) || null;
+  const hasAnyPhoto = photos.length > 0 || enhancedPhotos.length > 0;
 
   const handleSelect = async (photo: { path: string }) => {
     setSelectedPath(photo.path)
@@ -58,62 +57,31 @@ export function FeatureImagePicker({ houseId, photos, enhancedPhotos, featureIma
       <CardHeader className="pb-3">
         <CardTitle className="text-base flex items-center gap-2">
           <ImageIcon className="h-4 w-4 text-primary" />
-          Feature Image
+          Immagine principale
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        {/* Preview */}
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={selectedPhoto?.path || "empty"}
-            initial={{ opacity: 0, scale: 0.98 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.98 }}
-            transition={{ duration: 0.2 }}
-            className="relative overflow-hidden rounded-xl aspect-[16/9] bg-muted"
-          >
-            {selectedPhoto ? (
-              <>
-                <img
-                  src={toMediaUrl(selectedPhoto.path)}
-                  alt="Feature"
-                  className="w-full h-full object-cover"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent" />
-                <div className="absolute bottom-3 left-3 flex items-center gap-2">
-                  <Badge
-                    variant="secondary"
-                    className="bg-background/80 backdrop-blur-sm text-[11px] font-medium"
-                  >
-                    {enhancedPhotos.some((p) => p.path === selectedPhoto.path)
-                      ? "✨ Enhanced"
-                      : "Original"}
-                  </Badge>
-                </div>
-              </>
-            ) : (
-              <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
-                <Camera className="h-8 w-8 mb-2 opacity-40" />
-                <p className="text-sm">No photos available</p>
-              </div>
-            )}
-          </motion.div>
-        </AnimatePresence>
+        {!hasAnyPhoto && (
+          <div className="flex flex-col items-center justify-center gap-2 py-6 text-muted-foreground text-sm">
+            <Camera className="h-6 w-6 opacity-40" />
+            Nessuna foto disponibile
+          </div>
+        )}
 
         {/* Thumbnail picker */}
-        {(photos.length > 0 || enhancedPhotos.length > 0) && (
+        {hasAnyPhoto && (
           <Tabs value={tab} onValueChange={setTab}>
             <TabsList className="h-8 bg-muted/60">
               <TabsTrigger value="originals" className="text-xs gap-1.5 h-6 px-2.5">
                 <Camera className="h-3 w-3" />
-                Originals
+                Originali
                 <Badge variant="secondary" className="h-4 px-1 text-[9px] font-semibold ml-0.5">
                   {photos.length}
                 </Badge>
               </TabsTrigger>
               <TabsTrigger value="enhanced" className="text-xs gap-1.5 h-6 px-2.5">
                 <Sparkles className="h-3 w-3" />
-                Enhanced
+                Migliorate
                 <Badge variant="secondary" className="h-4 px-1 text-[9px] font-semibold ml-0.5">
                   {enhancedPhotos.length}
                 </Badge>
@@ -165,7 +133,7 @@ export function FeatureImagePicker({ houseId, photos, enhancedPhotos, featureIma
                 </div>
                 {(t === "originals" ? photos : enhancedPhotos).length === 0 && (
                   <p className="text-xs text-muted-foreground text-center py-4">
-                    No {t === "enhanced" ? "enhanced" : "original"} photos available
+                    Nessuna foto {t === "enhanced" ? "migliorata" : "originale"} disponibile
                   </p>
                 )}
               </TabsContent>

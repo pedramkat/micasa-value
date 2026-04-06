@@ -12,7 +12,6 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  extensions = [postgis]
 }
 
 model User {
@@ -51,11 +50,49 @@ model House {
   valuationHistory Json? @db.JsonB
   media       Json?    @db.JsonB
   featureImagePath String?
+  omiPolygonId String?
+  adjacentOmiPolygonIds String[] @default([])
+  housePlaces HousePlace[]
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   @@index([userId])
   @@index([ownerId])
+}
+
+model Place {
+  id               String   @id @default(cuid())
+  googlePlaceId    String   @unique
+  name             String
+  address          String?
+  rating           Float?
+  userRatingsTotal Int?
+  types            String[]
+  location         Unsupported("geometry(Point,4326)")?
+  raw              Json?    @db.JsonB
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  housePlaces HousePlace[]
+
+  @@index([googlePlaceId])
+}
+
+model HousePlace {
+  id            String   @id @default(cuid())
+  houseId       String
+  house         House    @relation(fields: [houseId], references: [id], onDelete: Cascade)
+  placeId       String
+  place         Place    @relation(fields: [placeId], references: [id], onDelete: Cascade)
+  category      String
+  distanceMeters Int?
+  fetchedAt     DateTime @default(now())
+
+  @@unique([houseId, placeId, category])
+  @@index([houseId])
+  @@index([placeId])
+  @@index([category])
+  @@index([fetchedAt])
 }
 
 model Session {
@@ -210,4 +247,19 @@ model ApiUsageCost {
   @@index([houseId])
   @@index([operation])
   @@unique([userId, houseId, provider, operation])
+}
+
+model Setting {
+  id                  String   @id @default("singleton")
+  agencyName          String?
+  agencyBio           String?
+  agencyLogoUrl       String?
+  contactEmail        String?
+  contactPhone        String?
+  websiteUrl          String?
+  headquartersAddress String?
+  defaultOpenAiModel  String?  @default("gpt-4o")
+  apiCostModels       Json?    @db.JsonB
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 }

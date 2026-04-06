@@ -123,11 +123,11 @@ export function UsersClient({ users }: { users: UsersClientUser[] }) {
   }, [users]);
 
   return (
-    <div className="p-4 lg:p-8 max-w-6xl mx-auto space-y-6">
+    <div className="p-4 lg:p-8 space-y-8 max-w-7xl mx-auto">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Users</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">Manage team members and their permissions</p>
+          <h1 className="text-2xl font-bold tracking-tight">Utenti</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">Gestisci i membri del team e le relative autorizzazioni.</p>
         </div>
         <Button
           size="sm"
@@ -137,7 +137,7 @@ export function UsersClient({ users }: { users: UsersClientUser[] }) {
           }}
         >
           <Plus className="mr-2 h-4 w-4" />
-          Add User
+          Aggiungi Utente
         </Button>
       </div>
 
@@ -172,18 +172,18 @@ export function UsersClient({ users }: { users: UsersClientUser[] }) {
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder="Search by name or email..."
+            placeholder="Cerca per nome o indirizzo email..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="pl-9 h-9 text-sm"
+            className="pl-9 h-10 text-sm bg-white shadow-sm border border-border"
           />
         </div>
         <Select value={roleFilter} onValueChange={setRoleFilter}>
-          <SelectTrigger className="w-[160px] h-9 text-sm">
-            <SelectValue placeholder="All roles" />
+          <SelectTrigger className="w-[200px] h-10 text-sm bg-white shadow-sm border border-border">
+            <SelectValue placeholder="Tutti i ruoli" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All roles</SelectItem>
+            <SelectItem value="all">Tutti i ruoli</SelectItem>
             {allRoles.map((role) => (
               <SelectItem key={role} value={role}>
                 {roleLabels[role]}
@@ -380,17 +380,17 @@ function UserDialog({
 
       const data = (await res.json()) as { ok?: boolean; id?: string; error?: string }
       if (!res.ok) {
-        toast.error(mode === "edit" ? "Failed to update user" : "Failed to add user", {
-          description: data?.error ?? "Unknown error",
+        toast.error(mode === "edit" ? "Impossibile aggiornare l'utente" : "Impossibile aggiungere l'utente", {
+          description: data?.error ?? "Errore sconosciuto",
         })
         return
       }
 
-      toast.success(mode === "edit" ? "User updated" : "User added successfully")
+      toast.success(mode === "edit" ? "Utente aggiornato" : "Utente aggiunto con successo")
       onSaved()
     } catch (e: any) {
-      toast.error(mode === "edit" ? "Failed to update user" : "Failed to add user", {
-        description: e?.message ?? "Unknown error",
+      toast.error(mode === "edit" ? "Impossibile aggiornare l'utente" : "Impossibile aggiungere l'utente", {
+        description: e?.message ?? "Errore sconosciuto",
       })
     } finally {
       setSaving(false)
@@ -401,27 +401,27 @@ function UserDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md bg-card text-foreground">
         <DialogHeader>
-          <DialogTitle>{mode === "edit" ? "Edit User" : "Add New User"}</DialogTitle>
+          <DialogTitle>{mode === "edit" ? "Modifica utente" : "Nuovo utente"}</DialogTitle>
           <DialogDescription>
-            {mode === "edit" ? "Update user details." : "Add a team member and assign their role."}
+            {mode === "edit" ? "Aggiorna i dettagli dell'utente." : "Aggiungi un membro del team e assegna il ruolo."}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-2">
           <div className="space-y-2">
-            <Label htmlFor="name">Name</Label>
+            <Label htmlFor="name">Nome</Label>
             <Input
               id="name"
-              placeholder="e.g. Maria Russo"
+              placeholder="es. Maria Russo"
               className="h-9"
               value={name}
               onChange={(e) => setName(e.target.value)}
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="surname">Surname</Label>
+            <Label htmlFor="surname">Cognome</Label>
             <Input
               id="surname"
-              placeholder="e.g. Rossi"
+              placeholder="es. Rossi"
               className="h-9"
               value={surname}
               onChange={(e) => setSurname(e.target.value)}
@@ -443,7 +443,7 @@ function UserDialog({
             <Input
               id="password"
               type="password"
-              placeholder={mode === "edit" ? "Leave blank to keep current" : "Set password"}
+              placeholder={mode === "edit" ? "Lascia vuoto per mantenere quella attuale" : "Imposta una password"}
               className="h-9"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
@@ -460,10 +460,10 @@ function UserDialog({
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="address">Address</Label>
+            <Label htmlFor="address">Indirizzo</Label>
             <Input
               id="address"
-              placeholder="Address"
+              placeholder="Indirizzo"
               className="h-9"
               value={address}
               onChange={(e) => setAddress(e.target.value)}
@@ -474,7 +474,7 @@ function UserDialog({
             <Input id="telegramId" className="h-9" value={telegramId} disabled />
           </div>
           <div className="space-y-2">
-            <Label>Role</Label>
+            <Label>Ruolo</Label>
             <Select value={role} onValueChange={(v) => setRole(v as Role)}>
               <SelectTrigger className="h-9">
                 <SelectValue />
@@ -491,10 +491,10 @@ function UserDialog({
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancel
+            Annulla
           </Button>
           <Button onClick={submit} disabled={!canSubmit}>
-            {saving ? (mode === "edit" ? "Saving..." : "Adding...") : mode === "edit" ? "Save" : "Add User"}
+            {saving ? (mode === "edit" ? "Salvataggio..." : "Creazione...") : mode === "edit" ? "Salva" : "Aggiungi utente"}
           </Button>
         </DialogFooter>
       </DialogContent>

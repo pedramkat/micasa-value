@@ -37,7 +37,7 @@ export function MediaGalleryGrid({ photos, selected, onToggleSelect, onPreview, 
           <ZoomIn className="h-6 w-6 text-muted-foreground" />
         </div>
         <h3 className="font-semibold">No photos yet</h3>
-        <p className="text-sm text-muted-foreground mt-1">Upload photos or send them via Telegram</p>
+        <p className="text-sm text-muted-foreground mt-1">Send them via Telegram</p>
       </div>
     )
   }

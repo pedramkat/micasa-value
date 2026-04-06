@@ -1,58 +1,29 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
-import { useSession } from "next-auth/react"
+import { useEffect, useState } from "react"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { useTheme } from "next-themes"
-import { Bell, Globe, Palette, Save, Shield, User, DollarSign } from "lucide-react"
+import { Bell, DollarSign, Globe, Palette, Save, User } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Separator } from "@/components/ui/separator"
 import { Switch } from "@/components/ui/switch"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { toast } from "sonner"
 
-function initialsFromUser(name?: string | null, email?: string | null) {
-  const src = (name?.trim() || "")
-  if (src) {
-    return src
-      .split(" ")
-      .filter(Boolean)
-      .slice(0, 2)
-      .map((x) => x[0]?.toUpperCase())
-      .join("")
-  }
-  if (email?.trim()) return email.trim().slice(0, 2).toUpperCase()
-  return "MC"
-}
-
 export default function SettingsPage() {
-  const { data: session } = useSession()
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const { theme, setTheme } = useTheme()
 
-  const activeTab = searchParams.get("tab") ?? "profile"
-
-  const initials = useMemo(
-    () => initialsFromUser(session?.user?.name ?? null, session?.user?.email ?? null),
-    [session?.user?.name, session?.user?.email],
-  )
-
-  const [profile, setProfile] = useState({
-    name: session?.user?.name ?? "",
-    email: session?.user?.email ?? "",
-    phone: "+39 ",
-    company: "MiCasa Valutazioni",
-    bio: "",
-  })
+  const activeTab = searchParams.get("tab") ?? "agency"
 
   const [notifications, setNotifications] = useState({
     emailUpdates: true,
@@ -60,6 +31,19 @@ export default function SettingsPage() {
     valuationAlerts: true,
     weeklyReport: false,
   })
+
+  const [generalSettings, setGeneralSettings] = useState({
+    agencyName: "",
+    agencyBio: "",
+    agencyLogoUrl: "",
+    contactEmail: "",
+    contactPhone: "",
+    websiteUrl: "",
+    headquartersAddress: "",
+    defaultOpenAiModel: "gpt-4o",
+    apiCostModelsText: "[]",
+  })
+  const [generalLoading, setGeneralLoading] = useState(false)
 
   const [costProvider, setCostProvider] = useState<string>("all")
   const [costCategory, setCostCategory] = useState<string>("all")
@@ -70,6 +54,9 @@ export default function SettingsPage() {
       id: string
       createdAt: string
       houseId: string | null
+      houseTitle: string | null
+      userId: string | null
+      userName: string | null
       provider: string
       category: string
       operation: string
@@ -87,7 +74,7 @@ export default function SettingsPage() {
     async function loadCosts() {
       setCostLoading(true)
       try {
-        const url = new URL("/api/settings/costs", window.location.origin)
+        const url = new URL("/api/settings/costs", globalThis.location.origin)
         if (costProvider !== "all") url.searchParams.set("provider", costProvider)
         if (costCategory !== "all") url.searchParams.set("category", costCategory)
         if (costFrom) url.searchParams.set("from", costFrom)
@@ -114,6 +101,14 @@ export default function SettingsPage() {
                 id: String(r.id),
                 createdAt: typeof r.createdAt === "string" ? r.createdAt : new Date(r.createdAt).toISOString(),
                 houseId: r.houseId ? String(r.houseId) : null,
+                houseTitle: typeof r.houseTitle === "string" ? r.houseTitle : null,
+                userId: r.userId ? String(r.userId) : null,
+                userName:
+                  typeof r.userName === "string" && r.userName.trim()
+                    ? r.userName.trim()
+                    : r.userId
+                      ? String(r.userId)
+                      : null,
                 provider: String(r.provider),
                 category: String(r.category),
                 operation: String(r.operation ?? "unknown"),
@@ -140,21 +135,92 @@ export default function SettingsPage() {
     }
   }, [costProvider, costCategory, costFrom, costTo])
 
-  const handleSave = () => {
-    toast.success("Settings saved")
+  useEffect(() => {
+    let canceled = false
+
+    async function loadGeneral() {
+      setGeneralLoading(true)
+      try {
+        const res = await fetch("/api/settings/general", { cache: "no-store" })
+        if (!res.ok) {
+          const data = await res.json().catch(() => null)
+          throw new Error(data?.error ?? `Failed fetching settings (${res.status})`)
+        }
+        const data = (await res.json()) as any
+        if (canceled) return
+
+        setGeneralSettings((prev) => ({
+          ...prev,
+          agencyName: typeof data?.agencyName === "string" ? data.agencyName : "",
+          agencyBio: typeof data?.agencyBio === "string" ? data.agencyBio : "",
+          agencyLogoUrl: typeof data?.agencyLogoUrl === "string" ? data.agencyLogoUrl : "",
+          contactEmail: typeof data?.contactEmail === "string" ? data.contactEmail : "",
+          contactPhone: typeof data?.contactPhone === "string" ? data.contactPhone : "",
+          websiteUrl: typeof data?.websiteUrl === "string" ? data.websiteUrl : "",
+          headquartersAddress: typeof data?.headquartersAddress === "string" ? data.headquartersAddress : "",
+          defaultOpenAiModel: typeof data?.defaultOpenAiModel === "string" && data.defaultOpenAiModel.trim() ? data.defaultOpenAiModel : "gpt-4o",
+          apiCostModelsText: JSON.stringify(data?.apiCostModels ?? [], null, 2),
+        }))
+      } catch (e: any) {
+        if (!canceled) {
+          toast.error("Impossibile caricare le impostazioni", { description: e?.message })
+        }
+      } finally {
+        if (!canceled) setGeneralLoading(false)
+      }
+    }
+
+    loadGeneral()
+    return () => {
+      canceled = true
+    }
+  }, [])
+
+  const handleSave = async () => {
+    try {
+      const parsed = JSON.parse(generalSettings.apiCostModelsText || "[]")
+      const res = await fetch("/api/settings/general", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          agencyName: generalSettings.agencyName,
+          agencyBio: generalSettings.agencyBio,
+          agencyLogoUrl: generalSettings.agencyLogoUrl,
+          contactEmail: generalSettings.contactEmail,
+          contactPhone: generalSettings.contactPhone,
+          websiteUrl: generalSettings.websiteUrl,
+          headquartersAddress: generalSettings.headquartersAddress,
+          defaultOpenAiModel: generalSettings.defaultOpenAiModel,
+          apiCostModels: parsed,
+        }),
+      })
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => null)
+        throw new Error(data?.error ?? `Save failed (${res.status})`)
+      }
+
+      toast.success("Impostazioni salvate")
+    } catch (e: any) {
+      if (e?.message?.includes("Unexpected token")) {
+        toast.error("JSON non valido nei costi API", { description: "Controlla il formato del campo" })
+        return
+      }
+      toast.error("Salvataggio fallito", { description: e?.message })
+    }
   }
 
   return (
-    <div className="p-4 lg:p-8 max-w-5xl mx-auto space-y-6">
+    <div className="p-4 lg:p-8 space-y-8 max-w-7xl mx-auto">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Settings</h1>
-          <p className="text-muted-foreground text-sm mt-1">Manage your profile and app preferences.</p>
+          <h1 className="text-2xl font-bold tracking-tight">Impostazioni</h1>
+          <p className="text-muted-foreground text-sm mt-1">Gestisci il tuo profilo e le preferenze dell'app.</p>
         </div>
 
         <Button onClick={handleSave} className="gap-2">
           <Save className="h-4 w-4" />
-          Save
+          Salva
         </Button>
       </div>
 
@@ -168,9 +234,9 @@ export default function SettingsPage() {
         className="space-y-6"
       >
         <TabsList className="bg-muted/50">
-          <TabsTrigger value="profile" className="gap-2">
+          <TabsTrigger value="agency" className="gap-2">
             <User className="h-4 w-4" />
-            Profile
+            Agenzia
           </TabsTrigger>
           <TabsTrigger value="notifications" className="gap-2">
             <Bell className="h-4 w-4" />
@@ -186,85 +252,134 @@ export default function SettingsPage() {
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="profile" className="space-y-6">
+        <TabsContent value="agency" className="space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg">Personal Information</CardTitle>
-              <CardDescription>Update your profile details.</CardDescription>
+              <CardTitle className="text-lg">Informazioni agenzia</CardTitle>
+              <CardDescription>Dati generali dell'applicazione e dell'agenzia.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="flex items-center gap-4 pb-4">
-                <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary text-primary-foreground text-xl font-bold">
-                  {initials}
-                </div>
-                <div>
-                  <Button variant="outline" size="sm">
-                    Change photo
-                  </Button>
-                  <p className="text-xs text-muted-foreground mt-1">JPG, PNG. Max 2MB.</p>
-                </div>
-              </div>
-
-              <Separator />
-
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
-                  <Label htmlFor="name">Full name</Label>
-                  <Input id="name" value={profile.name} onChange={(e) => setProfile({ ...profile, name: e.target.value })} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="email">Email</Label>
+                  <Label htmlFor="agency-name">Nome agenzia</Label>
                   <Input
-                    id="email"
-                    type="email"
-                    value={profile.email}
-                    onChange={(e) => setProfile({ ...profile, email: e.target.value })}
+                    id="agency-name"
+                    value={generalSettings.agencyName}
+                    onChange={(e) => setGeneralSettings({ ...generalSettings, agencyName: e.target.value })}
+                    disabled={generalLoading}
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="phone">Phone</Label>
-                  <Input id="phone" value={profile.phone} onChange={(e) => setProfile({ ...profile, phone: e.target.value })} />
+                  <Label htmlFor="agency-logo">Logo</Label>
+                  <Input
+                    id="agency-logo"
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0]
+                      if (!file) return
+                      const reader = new FileReader()
+                      reader.onload = () => {
+                        const result = typeof reader.result === "string" ? reader.result : ""
+                        if (!result) return
+                        setGeneralSettings({ ...generalSettings, agencyLogoUrl: result })
+                      }
+                      reader.readAsDataURL(file)
+                    }}
+                    disabled={generalLoading}
+                  />
+                  {generalSettings.agencyLogoUrl ? (
+                    <div className="pt-2">
+                      <div className="text-xs text-muted-foreground">Anteprima</div>
+                      <img
+                        src={generalSettings.agencyLogoUrl}
+                        alt="Logo"
+                        className="mt-2 h-16 w-16 rounded object-contain border bg-background"
+                      />
+                      <div className="pt-2">
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => setGeneralSettings({ ...generalSettings, agencyLogoUrl: "" })}
+                          disabled={generalLoading}
+                        >
+                          Rimuovi logo
+                        </Button>
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="agency-bio">Bio agenzia</Label>
+                <Textarea
+                  id="agency-bio"
+                  value={generalSettings.agencyBio}
+                  onChange={(e) => setGeneralSettings({ ...generalSettings, agencyBio: e.target.value })}
+                  rows={4}
+                  disabled={generalLoading}
+                />
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="contact-email">Email contatto</Label>
+                  <Input
+                    id="contact-email"
+                    value={generalSettings.contactEmail}
+                    onChange={(e) => setGeneralSettings({ ...generalSettings, contactEmail: e.target.value })}
+                    disabled={generalLoading}
+                  />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="company">Company</Label>
+                  <Label htmlFor="contact-phone">Telefono contatto</Label>
                   <Input
-                    id="company"
-                    value={profile.company}
-                    onChange={(e) => setProfile({ ...profile, company: e.target.value })}
+                    id="contact-phone"
+                    value={generalSettings.contactPhone}
+                    onChange={(e) => setGeneralSettings({ ...generalSettings, contactPhone: e.target.value })}
+                    disabled={generalLoading}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="website-url">Sito web</Label>
+                  <Input
+                    id="website-url"
+                    value={generalSettings.websiteUrl}
+                    onChange={(e) => setGeneralSettings({ ...generalSettings, websiteUrl: e.target.value })}
+                    disabled={generalLoading}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="hq-address">Indirizzo sede</Label>
+                  <Input
+                    id="hq-address"
+                    value={generalSettings.headquartersAddress}
+                    onChange={(e) => setGeneralSettings({ ...generalSettings, headquartersAddress: e.target.value })}
+                    disabled={generalLoading}
                   />
                 </div>
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="bio">Bio</Label>
-                <Textarea id="bio" value={profile.bio} onChange={(e) => setProfile({ ...profile, bio: e.target.value })} rows={3} />
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg flex items-center gap-2">
-                <Shield className="h-4 w-4" />
-                Security
-              </CardTitle>
-              <CardDescription>Manage password and authentication.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="current-pw">Current password</Label>
-                  <Input id="current-pw" type="password" placeholder="••••••••" />
-                </div>
-                <div />
-                <div className="space-y-2">
-                  <Label htmlFor="new-pw">New password</Label>
-                  <Input id="new-pw" type="password" placeholder="••••••••" />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="confirm-pw">Confirm password</Label>
-                  <Input id="confirm-pw" type="password" placeholder="••••••••" />
-                </div>
+                <Label>Modello OpenAI predefinito</Label>
+                <Select
+                  value={generalSettings.defaultOpenAiModel}
+                  onValueChange={(v) => setGeneralSettings({ ...generalSettings, defaultOpenAiModel: v })}
+                  disabled={generalLoading}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="gpt-4o">gpt-4o</SelectItem>
+                    <SelectItem value="gpt-4o-mini">gpt-4o-mini</SelectItem>
+                    <SelectItem value="gpt-4.1">gpt-4.1</SelectItem>
+                    <SelectItem value="gpt-4.1-mini">gpt-4.1-mini</SelectItem>
+                    <SelectItem value="gpt-4.1-nano">gpt-4.1-nano</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </CardContent>
           </Card>
@@ -382,6 +497,23 @@ export default function SettingsPage() {
               </div>
             </CardContent>
           </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">Configurazione costi API (JSON)</CardTitle>
+              <CardDescription>
+                Parametri applicativi per il calcolo dei costi (array JSON). Esempio: provider/category/model/unit/costUsd.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <Textarea
+                value={generalSettings.apiCostModelsText}
+                onChange={(e) => setGeneralSettings({ ...generalSettings, apiCostModelsText: e.target.value })}
+                rows={10}
+                disabled={generalLoading}
+              />
+              <div className="text-xs text-muted-foreground">Il salvataggio avviene col pulsante "Salva" in alto.</div>
+            </CardContent>
+          </Card>
 
           <Card>
             <CardHeader>
@@ -470,46 +602,76 @@ export default function SettingsPage() {
               </div>
 
               <div className="rounded-lg border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Date</TableHead>
-                      <TableHead>House</TableHead>
-                      <TableHead>Provider</TableHead>
-                      <TableHead>Category</TableHead>
-                      <TableHead>Operation</TableHead>
-                      <TableHead>Endpoint</TableHead>
-                      <TableHead className="text-right">Cost (USD)</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {costLoading ? (
+                <TooltipProvider delayDuration={150} skipDelayDuration={200} disableHoverableContent>
+                  <Table>
+                    <TableHeader>
                       <TableRow>
-                        <TableCell colSpan={7} className="text-sm text-muted-foreground">
-                          Loading...
-                        </TableCell>
+                        <TableHead>Date</TableHead>
+                        <TableHead>House</TableHead>
+                        <TableHead>User</TableHead>
+                        <TableHead>Provider</TableHead>
+                        <TableHead>Category</TableHead>
+                        <TableHead>Operation</TableHead>
+                        <TableHead>Endpoint</TableHead>
+                        <TableHead className="text-right">Cost (USD)</TableHead>
                       </TableRow>
-                    ) : costRows.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={7} className="text-sm text-muted-foreground">
-                          No cost records yet.
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      costRows.map((row) => (
-                        <TableRow key={row.id}>
-                          <TableCell>{new Date(row.createdAt).toLocaleString("en-GB")}</TableCell>
-                          <TableCell className="font-mono text-xs">{row.houseId ?? "—"}</TableCell>
-                          <TableCell className="capitalize">{row.provider}</TableCell>
-                          <TableCell className="capitalize">{row.category}</TableCell>
-                          <TableCell className="font-mono text-xs">{row.operation}</TableCell>
-                          <TableCell className="font-mono text-xs">{row.endpoint}</TableCell>
-                          <TableCell className="text-right">{row.costUsd.toFixed(6)}</TableCell>
+                    </TableHeader>
+                    <TableBody>
+                      {costLoading ? (
+                        <TableRow>
+                          <TableCell colSpan={8} className="text-sm text-muted-foreground">
+                            Loading...
+                          </TableCell>
                         </TableRow>
-                      ))
-                    )}
-                  </TableBody>
-                </Table>
+                      ) : costRows.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={8} className="text-sm text-muted-foreground">
+                            No cost records yet.
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        costRows.map((row) => {
+                          const createdAtLabel = new Date(row.createdAt).toLocaleString("en-GB")
+                          const fullHouseLabel = row.houseTitle?.trim() || row.houseId?.trim() || "—"
+                          const truncatedHouseLabel =
+                            fullHouseLabel !== "—" && fullHouseLabel.length > 32
+                              ? `${fullHouseLabel.slice(0, 32)}…`
+                              : fullHouseLabel
+                          const showHouseTooltip = truncatedHouseLabel !== fullHouseLabel
+                          const userLabel = row.userName?.trim() || row.userId || "—"
+
+                          return (
+                            <TableRow key={row.id}>
+                              <TableCell>{createdAtLabel}</TableCell>
+                              <TableCell className="text-sm">
+                                {fullHouseLabel === "—" ? (
+                                  "—"
+                                ) : showHouseTooltip ? (
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <span className="cursor-help whitespace-nowrap font-medium text-sm">
+                                        {truncatedHouseLabel}
+                                      </span>
+                                    </TooltipTrigger>
+                                    <TooltipContent side="top">{fullHouseLabel}</TooltipContent>
+                                  </Tooltip>
+                                ) : (
+                                  <span className="whitespace-nowrap font-medium text-sm">{truncatedHouseLabel}</span>
+                                )}
+                              </TableCell>
+                              <TableCell className="text-sm text-muted-foreground">{userLabel}</TableCell>
+                              <TableCell className="capitalize">{row.provider}</TableCell>
+                              <TableCell className="capitalize">{row.category}</TableCell>
+                              <TableCell className="font-mono text-xs">{row.operation}</TableCell>
+                              <TableCell className="font-mono text-xs">{row.endpoint}</TableCell>
+                              <TableCell className="text-right">{row.costUsd.toFixed(6)}</TableCell>
+                            </TableRow>
+                          )
+                        })
+                      )}
+                    </TableBody>
+                  </Table>
+                </TooltipProvider>
               </div>
 
               <div className="text-xs text-muted-foreground">

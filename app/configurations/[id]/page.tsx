@@ -108,7 +108,7 @@ export default function EditConfiguration({ params }: { params: Promise<{ id: st
     return (
       <div className="flex items-center justify-center min-h-[220px] gap-2 text-muted-foreground">
         <Loader2 className="h-5 w-5 animate-spin" />
-        <span className="text-sm font-medium">Loading...</span>
+        <span className="text-sm font-medium">Caricamento...</span>
       </div>
     );
   }
@@ -129,7 +129,7 @@ export default function EditConfiguration({ params }: { params: Promise<{ id: st
     <div className="p-4 lg:p-8 max-w-4xl mx-auto space-y-6">
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
         <Link href="/configurations" className="flex items-center gap-1 hover:text-foreground transition-colors">
-          <ArrowLeft className="h-4 w-4" /> Configurations
+          <ArrowLeft className="h-4 w-4" /> Configurazione
         </Link>
         <span>/</span>
         <span className="text-foreground font-medium truncate">Edit</span>
@@ -139,7 +139,7 @@ export default function EditConfiguration({ params }: { params: Promise<{ id: st
         <CardHeader>
           <CardTitle className="text-xl flex items-center gap-2">
             <Settings2 className="h-5 w-5 text-primary" />
-            Edit configuration
+            Modifica configurazione
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -154,7 +154,7 @@ export default function EditConfiguration({ params }: { params: Promise<{ id: st
             </div>
 
             <div className="space-y-2">
-              <label htmlFor="description" className="text-sm font-medium">Description</label>
+              <label htmlFor="description" className="text-sm font-medium">Descrizione</label>
               <Textarea id="description" value={description} onChange={(e) => setDescription(e.target.value)} rows={3} />
             </div>
 

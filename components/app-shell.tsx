@@ -32,10 +32,10 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 
 const navItems = [
   { label: "Dashboard", icon: LayoutDashboard, path: "/dashboard" },
-  { label: "Houses", icon: Building2, path: "/houses" },
-  { label: "Users", icon: Users, path: "/users" },
-  { label: "Configuration", icon: SlidersHorizontal, path: "/configurations" },
-  { label: "Settings", icon: Settings, path: "/settings" },
+  { label: "Case", icon: Building2, path: "/houses" },
+  { label: "Utenti", icon: Users, path: "/users" },
+  { label: "Configurazioni", icon: SlidersHorizontal, path: "/configurations" },
+  { label: "Impostazioni", icon: Settings, path: "/settings" },
 ]
 
 function initialsFromUser(name?: string | null, email?: string | null) {

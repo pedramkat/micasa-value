@@ -2,6 +2,8 @@ import { prisma } from "../db"
 import { CreateHouseInput, UpdateHouseInput, BotTextEntry } from "../types/house.types"
 import { House, Prisma } from "../../prisma/generated/client"
 import { randomUUID } from "node:crypto"
+import path from "node:path"
+import fs from "node:fs/promises"
 
 /**
  * HouseService - Business logic for House operations
@@ -164,7 +166,7 @@ export class HouseService {
         const avgNumber = typeof avgRaw === "string" || typeof avgRaw === "number" ? Number(avgRaw) : Number.NaN
         const nextValuationDecimal = Number.isFinite(avgNumber) ? avgNumber.toFixed(2) : null
 
-        return prisma.house.update({
+        const updated = await prisma.house.update({
             where: { id: houseId },
             data: {
                 aiHistory: nextAiHistory as Prisma.InputJsonValue,
@@ -174,6 +176,22 @@ export class HouseService {
                 valuation: nextValuationDecimal as any,
             },
         })
+
+        await this.deleteValuationPdfFile(houseId, valuationId)
+
+        return updated
+    }
+
+    private async deleteValuationPdfFile(houseId: string, valuationId: string): Promise<void> {
+        const pdfPath = path.join(process.cwd(), "storage", "pdf", houseId, `${valuationId}.pdf`)
+        try {
+            await fs.unlink(pdfPath)
+        } catch (error: any) {
+            if (error?.code === "ENOENT") {
+                return
+            }
+            console.warn(`[HouseService] Failed to delete valuation PDF (${houseId}/${valuationId}):`, error)
+        }
     }
 
     /**
@@ -281,6 +299,96 @@ export class HouseService {
         })
     }
 
+    private async findAdjacentOmiPolygonIds(omiPolygonId: string): Promise<string[]> {
+        const baseInfo = await prisma.$queryRaw<any[]>(Prisma.sql`
+            SELECT
+                id,
+                "comuneAmm",
+                semester,
+                ST_IsValid(ST_SetSRID(ST_GeomFromGeoJSON("polygonData"::text), 4326)) AS valid,
+                ST_GeometryType(ST_SetSRID(ST_GeomFromGeoJSON("polygonData"::text), 4326)) AS geom_type
+            FROM "OmiPolygon"
+            WHERE id = ${omiPolygonId}
+            LIMIT 1;
+        `)
+
+        const base = baseInfo?.[0]
+        if (!base) {
+            console.log(`[calculateGeom] adjacent polygons: base polygon not found for omiPolygonId=${omiPolygonId}`)
+            return []
+        }
+
+        console.log(
+            `[calculateGeom] adjacent polygons: base=${omiPolygonId} comuneAmm=${base.comuneAmm} semester=${base.semester} valid=${String(base.valid)} type=${String(base.geom_type)}`,
+        )
+
+        const touched = await prisma.$queryRaw<any[]>(Prisma.sql`
+            WITH base AS (
+                SELECT
+                    id,
+                    "comuneAmm",
+                    semester,
+                    ST_MakeValid(ST_SetSRID(ST_GeomFromGeoJSON("polygonData"::text), 4326)) AS geom
+                FROM "OmiPolygon"
+                WHERE id = ${omiPolygonId}
+                LIMIT 1
+            )
+            SELECT p.id
+            FROM "OmiPolygon" p
+            JOIN base b
+                ON p."comuneAmm" = b."comuneAmm"
+                AND p.semester = b.semester
+            WHERE p.id <> b.id
+              AND ST_Touches(
+                    ST_MakeValid(ST_SetSRID(ST_GeomFromGeoJSON(p."polygonData"::text), 4326)),
+                    b.geom
+                  )
+            LIMIT 50;
+        `)
+
+        const touchedIds = (touched || [])
+            .map((r) => (r && typeof r.id === "string" ? r.id : null))
+            .filter(Boolean) as string[]
+
+        console.log(`[calculateGeom] adjacent polygons: ST_Touches found=${touchedIds.length}`)
+        if (touchedIds.length > 0) {
+            return touchedIds
+        }
+
+        const dwithin = await prisma.$queryRaw<any[]>(Prisma.sql`
+            WITH base AS (
+                SELECT
+                    id,
+                    "comuneAmm",
+                    semester,
+                    ST_Transform(ST_MakeValid(ST_SetSRID(ST_GeomFromGeoJSON("polygonData"::text), 4326)), 3857) AS geom3857
+                FROM "OmiPolygon"
+                WHERE id = ${omiPolygonId}
+                LIMIT 1
+            )
+            SELECT p.id
+            FROM "OmiPolygon" p
+            JOIN base b
+                ON p."comuneAmm" = b."comuneAmm"
+                AND p.semester = b.semester
+            WHERE p.id <> b.id
+              AND ST_DWithin(
+                    ST_Transform(ST_MakeValid(ST_SetSRID(ST_GeomFromGeoJSON(p."polygonData"::text), 4326)), 3857),
+                    b.geom3857,
+                    2
+                  )
+            LIMIT 50;
+        `)
+
+        const dwithinIds = (dwithin || [])
+            .map((r) => (r && typeof r.id === "string" ? r.id : null))
+            .filter(Boolean) as string[]
+
+        console.log(`[calculateGeom] adjacent polygons: ST_DWithin(2m) found=${dwithinIds.length}`)
+
+        return dwithinIds
+    }
+
     async calculateGeom(houseId: string): Promise<void> {
         console.log("start calculating")
         console.log(`houseId: ${houseId}`)
@@ -336,6 +444,11 @@ export class HouseService {
             if (match) {
                 console.log(`House ${houseId} is inside OmiPolygon ${match.id} (${match.linkZona}) (lon/lat=[${lon}, ${lat}])`)
 
+                const adjacentOmiPolygonIds = await this.findAdjacentOmiPolygonIds(match.id)
+                console.log(
+                    `[calculateGeom] House ${houseId} adjacent polygons for ${match.id}: ${adjacentOmiPolygonIds.length} found`,
+                )
+
                 const marketValue = await prisma.omiMarketValue.findFirst({
                     where: {
                         descrTipologia: "Abitazioni civili",
@@ -359,13 +472,19 @@ export class HouseService {
 
                 const currentPricing = house?.pricingCurrent && typeof house.pricingCurrent === "object" ? (house.pricingCurrent as any) : {}
 
+                const updateData: any = {
+                    pricingCurrent: {
+                        ...(currentPricing || {}),
+                        geometry,
+                    } as Prisma.InputJsonValue,
+                    omiPolygonId: match.id,
+                    adjacentOmiPolygonIds,
+                }
+
                 await prisma.house.update({
                     where: { id: houseId },
                     data: {
-                        pricingCurrent: {
-                            ...(currentPricing || {}),
-                            geometry,
-                        } as Prisma.InputJsonValue,
+                        ...(updateData as any),
                     },
                 })
             } else {

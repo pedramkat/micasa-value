@@ -5,6 +5,8 @@ import { motion } from "framer-motion"
 
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { HouseLocationMap } from "@/components/house/HouseLocationMap"
+import type { NearbyPlacePin } from "@/components/house/house-location.types"
 import type { ZoneData } from "@/lib/market-data"
 import { eurFormatter } from "@/lib/mock-data"
 
@@ -12,6 +14,10 @@ interface Props {
   zones: ZoneData[]
   activeZone?: string
   coordinate: { lat: number; lon: number } | null
+  omiPolygonId?: string | null
+  omiPolygonGeoJson?: unknown | null
+  adjacentOmiPolygons?: Array<{ id: string; geoJson: unknown; comprMin?: string | null; comprMax?: string | null }> | null
+  nearbyPlaces?: NearbyPlacePin[]
 }
 
 function getPriceColor(avgPrice: number, allAvgs: number[]): string {
@@ -32,7 +38,7 @@ function getPriceBg(avgPrice: number, allAvgs: number[]): string {
   return "border-emerald-200 bg-emerald-50/50"
 }
 
-export function ZonePriceMap({ zones, activeZone, coordinate }: Props) {
+export function ZonePriceMap({ zones, activeZone, coordinate, omiPolygonId, omiPolygonGeoJson, adjacentOmiPolygons, nearbyPlaces }: Props) {
   const allAvgs = zones.map((z) => (z.marketMinPerSqm + z.marketMaxPerSqm) / 2)
 
   return (
@@ -45,13 +51,18 @@ export function ZonePriceMap({ zones, activeZone, coordinate }: Props) {
       </CardHeader>
       <CardContent className="space-y-4">
         {coordinate && (
-          <div className="relative overflow-hidden rounded-xl bg-muted h-52">
-            <iframe
-              className="w-full h-full border-0"
-              src={`https://www.openstreetmap.org/export/embed.html?bbox=${coordinate.lon - 0.03}%2C${coordinate.lat - 0.015}%2C${coordinate.lon + 0.03}%2C${coordinate.lat + 0.015}&layer=mapnik&marker=${coordinate.lat}%2C${coordinate.lon}`}
-              loading="lazy"
-            />
-            <div className="absolute bottom-2 right-2 flex gap-1">
+          <div className="relative overflow-hidden rounded-xl bg-muted h-80">
+            <div className="absolute inset-0">
+              <HouseLocationMap
+                lat={coordinate.lat}
+                lon={coordinate.lon}
+                omiPolygonId={omiPolygonId}
+                omiPolygonGeoJson={omiPolygonGeoJson}
+                adjacentOmiPolygons={adjacentOmiPolygons}
+                nearbyPlaces={nearbyPlaces}
+              />
+            </div>
+            <div className="pointer-events-none absolute bottom-2 right-2 flex gap-1">
               {[
                 { color: "bg-emerald-500", label: "€" },
                 { color: "bg-amber-400", label: "€€" },
