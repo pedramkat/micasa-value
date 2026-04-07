@@ -6,6 +6,7 @@ import { Building2, TrendingUp, Image as ImageIcon, FileText, ArrowRight } from 
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { HouseStatusBadge } from "@/components/house/HouseStatusBadge";
 import type { MapHousePoint } from "@/components/dashboard/HousesClusterMap";
 import { HousesClusterMap } from "@/components/dashboard/HousesClusterMap";
 
@@ -39,6 +40,7 @@ export default async function DashboardPage() {
       select: {
         id: true,
         title: true,
+        status: true,
         updatedAt: true,
         media: true,
         featureImagePath: true,
@@ -176,7 +178,10 @@ export default async function DashboardPage() {
                   )}
                 </div>
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-base truncate">{house.title}</CardTitle>
+                  <div className="flex items-start justify-between gap-3">
+                    <CardTitle className="text-base truncate">{house.title}</CardTitle>
+                    <HouseStatusBadge status={(house as any).status ?? null} className="shrink-0" />
+                  </div>
                 </CardHeader>
                 <CardContent className="pt-0">
                   <div className="flex items-center justify-between text-xs text-muted-foreground">

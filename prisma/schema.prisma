@@ -52,6 +52,7 @@ model House {
   featureImagePath String?
   omiPolygonId String?
   adjacentOmiPolygonIds String[] @default([])
+  status      HouseStatus @default(DA_VALUTARE)
   housePlaces HousePlace[]
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -223,6 +224,19 @@ enum ApiCostCategory {
   text
   voice
   places
+}
+
+enum HouseStatus {
+  DA_VALUTARE    @map("Da valutare")
+  IN_VALUTAZIONE @map("In valutazione")
+  VALUTATO       @map("Valutato")
+  IN_PREPARAZIONE @map("In preparazione")
+  ACQUISITO      @map("Acquisito")
+  IN_VENDITA     @map("In vendita")
+  IN_TRATTATIVA  @map("In trattativa")
+  VENDUTO        @map("Venduto")
+  RITIRATO       @map("Ritirato")
+  SOSPESO        @map("Sospeso")
 }
 
 model ApiUsageCost {

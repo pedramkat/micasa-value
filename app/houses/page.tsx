@@ -7,6 +7,8 @@ import { Building2, Loader2, Plus } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { formatHouseStatus } from "@/lib/utils";
 
 function toMediaUrl(storedPath: string): string {
   const normalized = storedPath.replace(/\\/g, "/")
@@ -22,6 +24,7 @@ interface House {
   description?: string;
   createdAt: string;
   featureImagePath?: string | null;
+  status?: string | null;
   user?: {
     name: string;
   };
@@ -106,11 +109,16 @@ function HousesList() {
 
                     <div className="min-w-0 flex-1">
                       <CardHeader className="p-0 pb-2">
-                        <CardTitle className="text-base">
-                          <Link href={`/houses/${house.id}`} className="hover:underline">
-                            {house.title}
-                          </Link>
-                        </CardTitle>
+                        <div className="flex items-start justify-between gap-3">
+                          <CardTitle className="text-base min-w-0">
+                            <Link href={`/houses/${house.id}`} className="hover:underline truncate block">
+                              {house.title}
+                            </Link>
+                          </CardTitle>
+                          <Badge variant="secondary" className="shrink-0">
+                            {formatHouseStatus(house.status ?? null)}
+                          </Badge>
+                        </div>
                       </CardHeader>
                       <CardContent className="p-0">
                         <div className="flex flex-col gap-1 text-sm">

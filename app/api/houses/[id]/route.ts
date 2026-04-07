@@ -1,5 +1,6 @@
 import prisma from "@/lib/prisma";
 import { NextResponse } from "next/server";
+import { HouseStatus } from "@/prisma/generated/client";
 
 export async function PATCH(
   request: Request,
@@ -11,9 +12,15 @@ export async function PATCH(
     return NextResponse.json({ error: "Missing house id" }, { status: 400 });
   }
 
-  const body = (await request.json()) as { ownerId?: string | null; featureImagePath?: string | null };
+  const body = (await request.json()) as {
+    ownerId?: string | null
+    featureImagePath?: string | null
+    status?: string | null
+  };
+  
   const ownerIdRaw = body?.ownerId;
   const featureImagePathRaw = body?.featureImagePath;
+  const statusRaw = body?.status;
 
   let ownerId: string | null = null;
   if (typeof ownerIdRaw === "string") {
@@ -38,14 +45,28 @@ export async function PATCH(
     }
   }
 
+  let status: HouseStatus | undefined = undefined;
+  if (typeof statusRaw === "string") {
+    const trimmed = statusRaw.trim();
+    const allowed = Object.keys(HouseStatus) as HouseStatus[];
+    
+    if (!allowed.includes(trimmed as HouseStatus)) {
+      return NextResponse.json({ error: "Invalid status" }, { status: 400 });
+    }
+    status = trimmed as HouseStatus;
+  } else if (statusRaw === null) {
+    return NextResponse.json({ error: "Invalid status" }, { status: 400 });
+  }
+
   try {
     await prisma.house.update({
       where: { id },
       data: {
         ownerId,
         ...(featureImagePath !== undefined ? { featureImagePath } : {}),
+        ...(status !== undefined ? { status } : {}),
       },
-      select: { id: true, ownerId: true },
+      select: { id: true, ownerId: true, status: true },
     });
 
     return NextResponse.json({ ok: true });

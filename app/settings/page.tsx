@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { Suspense, useEffect, useState } from "react"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { useTheme } from "next-themes"
 import { Bell, DollarSign, Globe, Palette, Save, User } from "lucide-react"
@@ -17,7 +17,25 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { toast } from "sonner"
 
-export default function SettingsPage() {
+function resolveUserDisplayName(userName: unknown, userId: unknown): string | null {
+  if (typeof userName === "string") {
+    const trimmed = userName.trim()
+    if (trimmed) return trimmed
+  }
+  if (typeof userId === "string") {
+    const trimmed = userId.trim()
+    if (trimmed) return trimmed
+  }
+  return null
+}
+
+function resolveHouseLabel(title: unknown, id: unknown): string {
+  if (typeof title === "string" && title.trim()) return title.trim()
+  if (typeof id === "string" && id.trim()) return id.trim()
+  return "—"
+}
+
+function SettingsPageContent() {
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
@@ -103,12 +121,7 @@ export default function SettingsPage() {
                 houseId: r.houseId ? String(r.houseId) : null,
                 houseTitle: typeof r.houseTitle === "string" ? r.houseTitle : null,
                 userId: r.userId ? String(r.userId) : null,
-                userName:
-                  typeof r.userName === "string" && r.userName.trim()
-                    ? r.userName.trim()
-                    : r.userId
-                      ? String(r.userId)
-                      : null,
+                userName: resolveUserDisplayName(r.userName, r.userId),
                 provider: String(r.provider),
                 category: String(r.category),
                 operation: String(r.operation ?? "unknown"),
@@ -632,33 +645,32 @@ export default function SettingsPage() {
                       ) : (
                         costRows.map((row) => {
                           const createdAtLabel = new Date(row.createdAt).toLocaleString("en-GB")
-                          const fullHouseLabel = row.houseTitle?.trim() || row.houseId?.trim() || "—"
-                          const truncatedHouseLabel =
-                            fullHouseLabel !== "—" && fullHouseLabel.length > 32
-                              ? `${fullHouseLabel.slice(0, 32)}…`
-                              : fullHouseLabel
-                          const showHouseTooltip = truncatedHouseLabel !== fullHouseLabel
-                          const userLabel = row.userName?.trim() || row.userId || "—"
+                          const fullHouseLabel = resolveHouseLabel(row.houseTitle, row.houseId)
+                          const needsHouseTooltip = fullHouseLabel !== "—" && fullHouseLabel.length > 32
+                          const truncatedHouseLabel = needsHouseTooltip
+                            ? `${fullHouseLabel.slice(0, 32)}…`
+                            : fullHouseLabel
+                          const houseLabelContent = (() => {
+                            if (fullHouseLabel === "—") return "—"
+                            const label = (
+                              <span className="cursor-help whitespace-nowrap font-medium text-sm">
+                                {truncatedHouseLabel}
+                              </span>
+                            )
+                            if (!needsHouseTooltip) return label
+                            return (
+                              <Tooltip>
+                                <TooltipTrigger asChild>{label}</TooltipTrigger>
+                                <TooltipContent side="top">{fullHouseLabel}</TooltipContent>
+                              </Tooltip>
+                            )
+                          })()
+                          const userLabel = row.userName || row.userId || "—"
 
                           return (
                             <TableRow key={row.id}>
                               <TableCell>{createdAtLabel}</TableCell>
-                              <TableCell className="text-sm">
-                                {fullHouseLabel === "—" ? (
-                                  "—"
-                                ) : showHouseTooltip ? (
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
-                                      <span className="cursor-help whitespace-nowrap font-medium text-sm">
-                                        {truncatedHouseLabel}
-                                      </span>
-                                    </TooltipTrigger>
-                                    <TooltipContent side="top">{fullHouseLabel}</TooltipContent>
-                                  </Tooltip>
-                                ) : (
-                                  <span className="whitespace-nowrap font-medium text-sm">{truncatedHouseLabel}</span>
-                                )}
-                              </TableCell>
+                              <TableCell className="text-sm">{houseLabelContent}</TableCell>
                               <TableCell className="text-sm text-muted-foreground">{userLabel}</TableCell>
                               <TableCell className="capitalize">{row.provider}</TableCell>
                               <TableCell className="capitalize">{row.category}</TableCell>
@@ -685,5 +697,13 @@ export default function SettingsPage() {
         </TabsContent>
       </Tabs>
     </div>
+  )
+}
+
+export default function SettingsPage() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <SettingsPageContent />
+    </Suspense>
   )
 }

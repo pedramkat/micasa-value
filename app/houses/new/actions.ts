@@ -4,6 +4,7 @@ import prisma from "@/lib/prisma";
 import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/auth";
+import { HouseStatus } from "@/prisma/generated/client";
 
 export async function createHouse(formData: FormData) {
   const session = await getServerSession(authOptions);
@@ -16,6 +17,7 @@ export async function createHouse(formData: FormData) {
       title: formData.get("title") as string,
       description: formData.get("description") as string,
       userId: session.user.id,
+      status: HouseStatus.DA_VALUTARE,
     },
   });
 

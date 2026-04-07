@@ -18,6 +18,7 @@ import { HouseDetailTabs } from "@/components/house-detail-tabs";
 import { OwnerSelect } from "@/components/house/OwnerSelect";
 import { FeatureImagePicker } from "@/components/house/FeatureImagePicker";
 import { AIRegenerateDialog } from "@/components/house/AIRegenerateDialog";
+import { HouseStatusSelect } from "@/components/house/HouseStatusSelect";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { MarketMetricsCards } from "@/components/house/MarketMetricsCards";
@@ -43,9 +44,29 @@ export default async function House({
 
   const house = await prisma.house.findUnique({
     where: { id: houseId },
-    include: {
+    select: {
+      id: true,
+      title: true,
+      description: true,
+      agencyId: true,
+      agentId: true,
+      ownerId: true,
+      userId: true,
+      valuation: true,
+      coordinate: true,
+      botTexts: true,
+      status: true,
+      featureImagePath: true,
+      media: true,
+      createdAt: true,
+      updatedAt: true,
+      pricingCurrent: true,
+      aiCurrent: true,
+      aiHistory: true,
       user: true,
       owner: true,
+      omiPolygonId: true,
+      adjacentOmiPolygonIds: true,
     },
   });
 
@@ -874,6 +895,15 @@ export default async function House({
         enhancedPhotos={enhancedPhotoItems}
         featureImagePath={(house as any).featureImagePath ?? null}
       />
+
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Stato</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <HouseStatusSelect houseId={houseId} currentStatus={(house as any).status ?? null} />
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader className="pb-3">

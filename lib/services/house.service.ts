@@ -1,6 +1,6 @@
 import { prisma } from "../db"
 import { CreateHouseInput, UpdateHouseInput, BotTextEntry } from "../types/house.types"
-import { House, Prisma } from "../../prisma/generated/client"
+import { House, HouseStatus, Prisma } from "../../prisma/generated/client"
 import { randomUUID } from "node:crypto"
 import path from "node:path"
 import fs from "node:fs/promises"
@@ -125,6 +125,7 @@ export class HouseService {
                 valuation: data.valuation,
                 coordinate: data.coordinate as unknown as Prisma.InputJsonValue,
                 botTexts: data.botTexts || [],
+                status: data.status ?? HouseStatus.DA_VALUTARE,
             } as any,
         })
     }

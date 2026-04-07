@@ -187,7 +187,7 @@ export class HousePdfService {
   }
 
   private async renderPdfFromHtml(html: string): Promise<Buffer> {
-    const browser = await puppeteer.launch({ headless: "new", args: NO_SANDBOX_ARGS })
+    const browser = await puppeteer.launch({ headless: true, args: NO_SANDBOX_ARGS })
     try {
       const page = await browser.newPage()
       await page.setContent(html, { waitUntil: "networkidle0" })
@@ -198,7 +198,7 @@ export class HousePdfService {
         margin: { top: "20mm", bottom: "20mm", left: "16mm", right: "16mm" },
       })
       await page.close()
-      return pdf
+      return Buffer.from(pdf)
     } finally {
       await browser.close()
     }
